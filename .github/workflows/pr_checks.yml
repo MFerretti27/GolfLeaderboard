@@ -1,0 +1,136 @@
+name: Check
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  syntax-check:
+    name: ✅ Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check for syntax errors
+        run: python -m compileall .
+
+  ruff-check:
+    name: 🦊 Ruff Check & Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Run Ruff lint (with auto-fix)
+        run: ruff check . --fix
+
+      - name: Format with Ruff (optional if replacing Black)
+        run: ruff format .
+
+  spell-check:
+    name: 🔤 Spell Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run codespell
+        uses: codespell-project/actions-codespell@v2
+        with:
+          check_filenames: true
+          skip: .git,venv,__pycache__,*.svg
+          ignore_words_list: "teh,func,ign,nd,OT,toi,TOI,FO,Consolas"
+
+  sonarcloud:
+    name: 📊 SonarCloud Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+  pr-description-check:
+    name: 📝 PR Description Required
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check PR description
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+
+            const body = pr.data.body || "";
+
+            if (body.trim().length < 10) {
+              core.setFailed("❌ PR description is required and must be at least 10 characters long.");
+            } else {
+              console.log("✅ PR description is present.");
+            }
+
+  type-check:
+    name: 🔎 Type Checking
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install mypy and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mypy
+          pip install -r requirements.txt
+
+      - name: Run mypy
+        run: mypy . --exclude tests

@@ -4,6 +4,7 @@ A lightweight PGA leaderboard project with two entry points:
 
 - `golf.py`: data + formatting layer (CLI-friendly)
 - `golf_live_gui.py`: fullscreen-style GUI leaderboard using FreeSimpleGUI
+- `main.py`: bootstrap runner that creates a virtual environment, installs dependencies, and launches the app
 
 ## Files
 
@@ -20,6 +21,12 @@ A lightweight PGA leaderboard project with two entry points:
   - Supports keyboard navigation
   - Shows/hides tournament logo based on local image availability
 
+- `main.py`
+  - Creates `./venv` automatically if it does not exist
+  - Installs dependencies from `requirements.txt`
+  - Removes `.DS_Store` files on macOS
+  - Launches the `golf` module inside the virtual environment
+
 ## Requirements
 
 Install dependencies:
@@ -30,11 +37,25 @@ pip install requests FreeSimpleGUI
 
 ## Run
 
+Recommended (automatic setup + run):
+
+```bash
+python3 main.py
+```
+
+This command will:
+
+- create `./venv`
+- install packages from `requirements.txt`
+- run the app inside the virtual environment
+
+Manual run options:
+
 From this folder:
 
 ```bash
 python3 golf.py
-python3 golf_live_gui.py
+python3 leadboard_gui.py
 ```
 
 ## GUI Controls

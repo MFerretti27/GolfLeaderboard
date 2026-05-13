@@ -109,7 +109,7 @@ def main() -> None:
     """Create virtual environment, download dependencies, and run script."""
     venv_dir = "./venv"
     requirements_file = "requirements.txt"
-    program_script = "golf"
+    program_script = "leaderboard_gui"
 
     create_virtualenv(venv_dir)
     install_requirements(venv_dir, requirements_file)

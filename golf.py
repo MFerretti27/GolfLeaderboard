@@ -384,7 +384,7 @@ def get_tournament_presentation_data(event, top_n=None):
         "location": location_text,
         "weather": weather_text,
         "logo_path": logo_path,
-        "broadcast": competition.get("broadcast", ""),
+        "broadcast": competition.get("broadcast", "").replace("/", ", "),
         "is_live": is_live_event(event),
         "today": "",
     }

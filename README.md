@@ -1,5 +1,8 @@
 # Golf Leaderboard
 
+<img width="250" height="275" alt="Screenshot 2026-05-12 at 10 05 38 PM" src="https://github.com/user-attachments/assets/289efd8c-26ad-468a-b070-dde2d68ae89d" />
+
+
 A lightweight PGA leaderboard project with two entry points:
 
 - `golf.py`: data + formatting layer (CLI-friendly)

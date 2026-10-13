@@ -66,7 +66,15 @@ python3 golf_live_gui.py --display eink --driver-path /path/to/RPi_Zero_PhotoPai
 
 Install `requests` and Pillow for the app, plus the SPI/GPIO dependencies required by the Waveshare demo. E-ink mode loads the driver only when selected, so a desktop-only setup does not need the Waveshare library. To change the refresh interval, add `--refresh-seconds 600` (for ten minutes).
 
-On the Pi, run `bash .github/setup_pi_zero_2w.sh` from the repository checkout. The script installs Raspberry Pi OS packages, enables SPI, downloads the PhotoPainter-specific driver if it is missing, and enables a systemd service to start the e-paper leaderboard at boot. Use `--no-service` if you only want to install the dependencies and run the app manually. Reboot if the script reports that SPI is not available yet.
+You can run setup directly on the Pi as described below, or launch it remotely from a Mac/Linux computer with SSH access and Git installed. The remote helper clones or updates the current branch under `~/GolfLeaderboard`, then runs the same Pi setup script. Push the branch to `origin` first so the Pi can clone it.
+
+```bash
+bash .github/deploy_pi_zero_2w.sh --ip 192.168.1.42 --user pi
+```
+
+Replace the example address and username with your Pi's values. SSH key login is recommended; the command may prompt for the Pi account password and the setup script may prompt for sudo. Once installed, the leaderboard runs as a systemd service and does not depend on the SSH session staying open.
+
+To set up directly on the Pi instead, run `bash .github/setup_pi_zero_2w.sh` from the repository checkout. The script installs Raspberry Pi OS packages, enables SPI, downloads the PhotoPainter-specific driver if it is missing, and enables a systemd service to start the e-paper leaderboard at boot. Use `--no-service` if you only want to install the dependencies and run the app manually. Reboot if the script reports that SPI is not available yet.
 
 ## GUI Controls
 

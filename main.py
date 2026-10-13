@@ -53,14 +53,19 @@ def install_requirements(venv_dir: str, requirements_file: str) -> None:
         sys.exit(1)
 
 
-def run_program_in_venv(venv_dir: str, program_script: str) -> None:
+def run_program_in_venv(
+    venv_dir: Path,
+    program_script: str,
+    program_args: list[str] | None = None,
+    working_dir: Path | None = None,
+) -> None:
     """Run a Python program inside the virtual environment.
 
     :param venv_dir: virtual environment directory name
     :param program_script: python module to execute in subprocess
     """
-    python_executable = (Path(venv_dir) / "Scripts" / "python.exe") \
-        if platform.system() == "Windows" else (Path(venv_dir) / "bin" / "python")
+    python_executable = (venv_dir / "Scripts" / "python.exe") \
+        if platform.system() == "Windows" else (venv_dir / "bin" / "python")
 
     if not Path(python_executable).exists():
         print(f"Error: Python executable not found at {python_executable}")
@@ -69,7 +74,10 @@ def run_program_in_venv(venv_dir: str, program_script: str) -> None:
     # Run the program
     print(f"Running program {program_script} inside virtual environment...")
     try:
-        subprocess.call([python_executable, "-m", program_script])
+        subprocess.call(
+            [str(python_executable), "-m", program_script, *(program_args or [])],
+            cwd=working_dir,
+        )
     except Exception:
         print(f"Failed to run program {program_script}", exc_info=True)
         sys.exit(1)
@@ -107,14 +115,14 @@ def remove_ds_files() -> None:
 
 def main() -> None:
     """Create virtual environment, download dependencies, and run script."""
-    venv_dir = "./venv"
-    requirements_file = "requirements.txt"
-    program_script = "leaderboard_gui"
+    repo_root = Path(__file__).resolve().parent
+    venv_dir = repo_root / "venv"
+    requirements_file = repo_root / "requirements.txt"
+    program_script = "golf_live_gui"
 
-    create_virtualenv(venv_dir)
-    install_requirements(venv_dir, requirements_file)
-    remove_ds_files()
-    run_program_in_venv(venv_dir, program_script)
+    create_virtualenv(str(venv_dir))
+    install_requirements(str(venv_dir), str(requirements_file))
+    run_program_in_venv(venv_dir, program_script, sys.argv[1:], repo_root)
 
 
 if __name__ == "__main__":

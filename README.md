@@ -1,13 +1,10 @@
 # Golf Leaderboard
 
-<img width="250" height="275" alt="Screenshot 2026-05-12 at 10 05 38 PM" src="https://github.com/user-attachments/assets/289efd8c-26ad-468a-b070-dde2d68ae89d" />
-
-
 A lightweight PGA leaderboard project with two entry points:
 
 - `golf.py`: data + formatting layer (CLI-friendly)
-- `golf_live_gui.py`: fullscreen-style GUI leaderboard using FreeSimpleGUI
-- `main.py`: bootstrap runner that creates a virtual environment, installs dependencies, and launches the app
+- `golf_live_gui.py`: selects FreeSimpleGUI for regular screens or a native Waveshare driver for the PhotoPainter e-paper display
+- `golf_epaper.py`: renders the leaderboard as an 800x480 image and sends it to the Waveshare E6 panel
 
 ## Files
 
@@ -23,43 +20,53 @@ A lightweight PGA leaderboard project with two entry points:
   - Rotates tournaments automatically every refresh interval
   - Supports keyboard navigation
   - Shows/hides tournament logo based on local image availability
-
-- `main.py`
-  - Creates `./venv` automatically if it does not exist
-  - Installs dependencies from `requirements.txt`
-  - Removes `.DS_Store` files on macOS
-  - Launches the `golf` module inside the virtual environment
+- `golf_epaper.py`
+  - Renders a compact leaderboard for the 7.3-inch PhotoPainter E6 panel
+  - Uses the `epd7in3e` driver from the official PhotoPainter demo
+  - Refreshes every five minutes by default
 
 ## Requirements
 
 Install dependencies:
 
 ```bash
-pip install requests FreeSimpleGUI
+pip install -r requirements.txt
 ```
 
 ## Run
-
-Recommended (automatic setup + run):
-
-```bash
-python3 main.py
-```
-
-This command will:
-
-- create `./venv`
-- install packages from `requirements.txt`
-- run the app inside the virtual environment
-
-Manual run options:
 
 From this folder:
 
 ```bash
 python3 golf.py
-python3 leadboard_gui.py
+python3 golf_live_gui.py
 ```
+
+`main.py` also creates/uses the project virtual environment and forwards display options, for example `python3 main.py --display eink`.
+
+### Display profiles
+
+The app defaults to FreeSimpleGUI on a regular monitor. For the Waveshare RPi Zero PhotoPainter E6 panel, use:
+
+```bash
+python3 golf_live_gui.py --display eink
+```
+
+E-ink mode uses the panel's hardware driver directly; it does not open a desktop GUI. The default refresh interval is five minutes. The regular screen mode continues to use FreeSimpleGUI and refreshes every 30 seconds.
+
+### PhotoPainter setup
+
+Use the driver/demo for the **RPi Zero PhotoPainter**, not a generic 7.3-inch Waveshare driver. The board has a different display power pin (BCM GPIO 27). Follow the [Waveshare PhotoPainter guide](https://www.waveshare.com/wiki/RPi_Zero_PhotoPainter), enable SPI with `sudo raspi-config`, and run the vendor's e-paper demo before using this app.
+
+Download and extract the [official PhotoPainter demo](https://files.waveshare.com/wiki/RPi_Zero_PhotoPainter/Demo/RPi_Zero_PhotoPainter.zip). If its driver library is not in the default expected location, pass the path to its `7in3_e-Paper_E/python/lib` folder:
+
+```bash
+python3 golf_live_gui.py --display eink --driver-path /path/to/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib
+```
+
+Install `requests` and Pillow for the app, plus the SPI/GPIO dependencies required by the Waveshare demo. E-ink mode loads the driver only when selected, so a desktop-only setup does not need the Waveshare library. To change the refresh interval, add `--refresh-seconds 600` (for ten minutes).
+
+On the Pi, run `bash .github/setup_pi_zero_2w.sh` from the repository checkout. The script installs Raspberry Pi OS packages, enables SPI, downloads the PhotoPainter-specific driver if it is missing, and enables a systemd service to start the e-paper leaderboard at boot. Use `--no-service` if you only want to install the dependencies and run the app manually. Reboot if the script reports that SPI is not available yet.
 
 ## GUI Controls
 
@@ -69,7 +76,8 @@ python3 leadboard_gui.py
 
 ## Refresh Behavior
 
-- Auto-refresh interval is set by `AUTO_REFRESH_MS` in `golf_live_gui.py`
+- Screen refresh defaults to 30 seconds; e-paper refresh defaults to 300 seconds.
+- Override either interval with `--refresh-seconds`.
 - Last update text shows:
   - time on success
   - error details on refresh failure

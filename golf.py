@@ -1,4 +1,4 @@
-import requests  # type: ignore[import]
+import requests
 from datetime import datetime
 from pathlib import Path
 import re
@@ -384,7 +384,7 @@ def get_tournament_presentation_data(event, top_n=None):
         "location": location_text,
         "weather": weather_text,
         "logo_path": logo_path,
-        "broadcast": competition.get("broadcast", "").replace("/", ", "),
+        "broadcast": competition.get("broadcast", ""),
         "is_live": is_live_event(event),
         "today": "",
     }

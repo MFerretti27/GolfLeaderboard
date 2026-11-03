@@ -173,6 +173,7 @@ Use `bash .github/setup_pi_zero_2w.sh --no-service` if you want the setup script
 
 - Screen refresh defaults to 30 seconds; e-paper refresh defaults to 300 seconds.
 - Override either interval with `--refresh-seconds`.
+- E-paper checks for updates at the configured interval but only refreshes the panel when the rendered image changes. With multiple tournaments, automatic tournament rotation changes the image and therefore triggers a refresh.
 - Last update text shows:
   - time on success
   - error details on refresh failure

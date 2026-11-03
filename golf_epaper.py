@@ -338,6 +338,8 @@ def run_epaper(
     epd = epd_module.EPD()
     initialized = False
     current_index = -1
+    last_display_buffer: Any = None
+    last_displayed_at = datetime.now()
 
     try:
         if epd.init() != 0:
@@ -353,9 +355,17 @@ def run_epaper(
                 else:
                     current_event = None
 
-                image = draw_scoreboard(current_event, datetime.now(), orientation)
-                epd.display(epd.getbuffer(image))
-                print(f"E-paper refreshed at {datetime.now():%Y-%m-%d %H:%M:%S}")
+                image = draw_scoreboard(current_event, last_displayed_at, orientation)
+                display_buffer = epd.getbuffer(image)
+                if display_buffer != last_display_buffer:
+                    last_displayed_at = datetime.now()
+                    image = draw_scoreboard(current_event, last_displayed_at, orientation)
+                    display_buffer = epd.getbuffer(image)
+                    epd.display(display_buffer)
+                    last_display_buffer = display_buffer
+                    print(f"E-paper refreshed at {last_displayed_at:%Y-%m-%d %H:%M:%S}")
+                else:
+                    print(f"No visible changes at {datetime.now():%Y-%m-%d %H:%M:%S}; skipped refresh")
             except KeyboardInterrupt:
                 break
             except Exception as exc:

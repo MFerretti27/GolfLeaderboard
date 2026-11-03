@@ -186,12 +186,8 @@ def draw_scoreboard(
     title = event.get("shortName") or event.get("name") or "Golf Leaderboard"
     course = metadata.get("course", "")
     location = metadata.get("location", "")
-    location_parts = []
-    if course and course != "N/A":
-        location_parts.append(f"Course: {course}")
-    if location and location != "N/A":
-        location_parts.append(f"Location: {location}")
-    location_line = "  |  ".join(location_parts)
+    course_line = f"Course: {course}" if course and course != "N/A" else ""
+    location_line = f"Location: {location}" if location and location != "N/A" else ""
     weather = metadata.get("weather", "")
     weather_line = f"Weather: {weather}" if weather and weather != "N/A" else ""
 
@@ -209,6 +205,7 @@ def draw_scoreboard(
         for text, font, line_height, x in (
             (title, title_font, 30, 16),
             (date_line, row_font, 19, 18),
+            (course_line, row_font, 19, 18),
             (location_line, row_font, 19, 18),
             (weather_line, row_font, 19, 18),
             ("  |  ".join(context_parts), row_font, 19, 18),
@@ -223,11 +220,14 @@ def draw_scoreboard(
         content_width = 764
         draw.text((16, 8), shorten_text(draw, title, title_font, content_width), font=title_font, fill=text_color)
         draw.text((18, 40), shorten_text(draw, date_line, row_font, content_width), font=row_font, fill=text_color)
-        draw.text((18, 62), shorten_text(draw, location_line, row_font, content_width), font=row_font, fill=text_color)
+        if course_line:
+            draw.text((18, 62), shorten_text(draw, course_line, row_font, content_width), font=row_font, fill=text_color)
+        if location_line:
+            draw.text((18, 84), shorten_text(draw, location_line, row_font, content_width), font=row_font, fill=text_color)
         if weather_line:
-            draw.text((18, 84), shorten_text(draw, weather_line, row_font, content_width), font=row_font, fill=text_color)
+            draw.text((18, 106), shorten_text(draw, weather_line, row_font, content_width), font=row_font, fill=text_color)
         if context_parts:
-            context_y = 106 if weather_line else 84
+            context_y = 128
             draw.text((18, context_y), shorten_text(draw, "  |  ".join(context_parts), row_font, content_width), font=row_font, fill=text_color)
 
     if is_vertical:
@@ -241,7 +241,7 @@ def draw_scoreboard(
         table_right = 470
     else:
         # Landscape layout also fits each hole score during a live round.
-        table_top = 132
+        table_top = 154
         is_live = bool(metadata.get("is_live"))
         if is_live:
             positions = [12, 54, 222, 282]
@@ -255,7 +255,7 @@ def draw_scoreboard(
             labels = headers[:8]
             positions = [12, 60, 300, 385, 485, 565, 645, 725][:len(labels)]
             column_widths = [42, 230, 78, 92, 72, 72, 72, 64][:len(labels)]
-        rows_to_render = 9
+        rows_to_render = 8
         row_height = 31
         footer_y = 456
         table_right = 790

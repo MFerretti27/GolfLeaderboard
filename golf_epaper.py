@@ -120,24 +120,6 @@ def wrap_text(draw: Any, text: Any, font: Any, max_width: int) -> list[str]:
     return lines
 
 
-def draw_tournament_logo(image: Any, logo_path: str, orientation: str) -> bool:
-    """Draw a matching local tournament logo in the top-right corner."""
-    if not logo_path:
-        return False
-    from PIL import Image
-
-    try:
-        with Image.open(logo_path) as source:
-            logo = source.convert("RGBA")
-        bounds = (120, 72) if orientation == "vertical" else (96, 66)
-        logo.thumbnail(bounds, Image.Resampling.LANCZOS)
-        x = image.width - logo.width - 12
-        image.paste(logo, (x, 8), logo)
-        return True
-    except (OSError, ValueError):
-        return False
-
-
 def draw_scoreboard(
     event: dict[str, Any] | None,
     updated_at: datetime,
@@ -158,15 +140,50 @@ def draw_scoreboard(
     image_rotation = Image.Transpose.ROTATE_90 if is_vertical else None
 
     if event is None:
-        footer_y = 770 if is_vertical else 456
-        draw.text((18, 18), "Golf Leaderboard", font=title_font, fill=text_color)
-        draw.text((18, 62), "No tournament data is available.", font=header_font, fill=text_color)
+        from PIL import ImageFont
+
+        logo_path = Path(__file__).resolve().parent / "images" / "pga_logo.png"
+        # Size the cropped artwork to 1.5x its previous visible size.
+        logo_width, logo_height = (323, 410) if is_vertical else (245, 312)
+        logo = None
+        if logo_path.is_file():
+            try:
+                with Image.open(logo_path) as source:
+                    logo = source.convert("RGBA")
+                alpha_bounds = logo.getchannel("A").getbbox()
+                if alpha_bounds:
+                    logo = logo.crop(alpha_bounds)
+                logo.thumbnail((logo_width, logo_height), Image.Resampling.LANCZOS)
+            except (OSError, ValueError):
+                logo = None
+
+        footer_y = image.height - 22
+        message = "No tournaments found"
+        try:
+            message_font = ImageFont.truetype(header_font.path, 22)
+        except (AttributeError, OSError):
+            try:
+                message_font = ImageFont.load_default(size=22)
+            except TypeError:
+                message_font = header_font
+        if logo is not None:
+            message_width = draw.textlength(message, font=message_font)
+            message_y = footer_y - 72
+            image_area_bottom = message_y - 26
+            logo_x = (image.width - logo.width) // 2
+            logo_y = max(8, (image_area_bottom - logo.height) // 2)
+            image.paste(logo, (logo_x, logo_y), logo)
+            message_x = (image.width - message_width) / 2
+            draw.text((message_x, message_y), message, font=message_font, fill=text_color)
+        else:
+            message_width = draw.textlength(message, font=message_font)
+            draw.text(((image.width - message_width) / 2, image.height // 2), message, font=message_font, fill=text_color)
+
         draw.text((18, footer_y), f"Updated {updated_at:%I:%M %p}", font=row_font, fill=text_color)
         return image.transpose(image_rotation) if image_rotation is not None else image
 
     metadata, headers, rows = get_tournament_presentation_data(event, top_n=ROWS_TO_DISPLAY)
     title = event.get("shortName") or event.get("name") or "Golf Leaderboard"
-    has_logo = draw_tournament_logo(image, metadata.get("logo_path", ""), orientation)
     course = metadata.get("course", "")
     location = metadata.get("location", "")
     location_parts = []
@@ -187,7 +204,7 @@ def draw_scoreboard(
     date_line = "  |  ".join(part for part in date_parts if part)
 
     if is_vertical:
-        content_width = 320 if has_logo else 448
+        content_width = 448
         top_y = 8
         for text, font, line_height, x in (
             (title, title_font, 30, 16),
@@ -201,11 +218,9 @@ def draw_scoreboard(
             for line in wrap_text(draw, text, font, content_width):
                 draw.text((x, top_y), line, font=font, fill=text_color)
                 top_y += line_height
-        if has_logo:
-            top_y = max(top_y, 88)
         vertical_table_top = top_y + 8
     else:
-        content_width = 650 if has_logo else 764
+        content_width = 764
         draw.text((16, 8), shorten_text(draw, title, title_font, content_width), font=title_font, fill=text_color)
         draw.text((18, 40), shorten_text(draw, date_line, row_font, content_width), font=row_font, fill=text_color)
         draw.text((18, 62), shorten_text(draw, location_line, row_font, content_width), font=row_font, fill=text_color)
@@ -254,18 +269,45 @@ def draw_scoreboard(
         draw.text((positions[index], table_top), label, font=header_font, fill=text_color)
 
     if not rows:
-        empty_message = "The player field has not been posted yet. Player names will appear here when available."
-        message_width = table_right - 24
-        message_lines = wrap_text(draw, empty_message, row_font, message_width)
-        message_height = len(message_lines) * 20
+        from PIL import ImageFont
+
+        empty_message = "No players found yet"
+        try:
+            message_font = ImageFont.truetype(header_font.path, 22)
+        except (AttributeError, OSError):
+            try:
+                message_font = ImageFont.load_default(size=22)
+            except TypeError:
+                message_font = header_font
+
+        logo_path = metadata.get("logo_path") or str(Path(__file__).resolve().parent / "images" / "pga_logo.png")
+        logo = None
+        try:
+            with Image.open(logo_path) as source:
+                logo = source.convert("RGBA")
+            alpha_bounds = logo.getchannel("A").getbbox()
+            if alpha_bounds:
+                logo = logo.crop(alpha_bounds)
+            logo_bounds = (220, 220) if is_vertical else (180, 130)
+            logo.thumbnail(logo_bounds, Image.Resampling.LANCZOS)
+        except (OSError, ValueError):
+            logo = None
+
         table_body_top = table_top + 34
         table_body_bottom = footer_y - 20
-        message_y = table_body_top + max(0, (table_body_bottom - table_body_top - message_height) // 2)
-        for line in message_lines:
-            line_width = draw.textlength(line, font=row_font)
-            message_x = (image.width - line_width) / 2
-            draw.text((message_x, message_y), line, font=row_font, fill=text_color)
-            message_y += 20
+        message_width = draw.textlength(empty_message, font=message_font)
+        message_height = 28
+        logo_gap = 14 if logo is not None else 0
+        logo_height = logo.height if logo is not None else 0
+        group_height = logo_height + logo_gap + message_height
+        group_top = table_body_top + max(0, (table_body_bottom - table_body_top - group_height) // 2)
+
+        if logo is not None:
+            logo_x = (image.width - logo.width) // 2
+            image.paste(logo, (logo_x, group_top), logo)
+        message_y = group_top + logo_height + logo_gap
+        message_x = (image.width - message_width) / 2
+        draw.text((message_x, message_y), empty_message, font=message_font, fill=text_color)
 
     for row_index, row in enumerate(rows[:rows_to_render]):
         y = table_top + 31 + row_index * row_height
@@ -310,6 +352,7 @@ def run_epaper(
                     current_event = events[current_index]
                 else:
                     current_event = None
+
                 image = draw_scoreboard(current_event, datetime.now(), orientation)
                 epd.display(epd.getbuffer(image))
                 print(f"E-paper refreshed at {datetime.now():%Y-%m-%d %H:%M:%S}")

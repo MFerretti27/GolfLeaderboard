@@ -179,11 +179,11 @@ Use `bash .github/setup_pi_zero_2w.sh --no-service` if you want the setup script
 
 ## Local Tournament Logos
 
-Tournament images are local-only (no ESPN image dependency). Matching logos display in both the GUI and the e-paper layout.
+Tournament images are local-only (no ESPN image dependency). On e-paper, a matching tournament logo is shown only when that event has no player rows, above the “No players found yet” message. If there is no event at all, the PGA logo is used instead.
 
-Create this folder next to the scripts:
+Put tournament logo files in the `images/` folder next to the scripts. The legacy `tournament_images/` folder is also checked for compatibility:
 
-- `tournament_images/`
+- `images/`
 
 The app will search for files using these base names (first match wins):
 
@@ -196,7 +196,7 @@ Supported extensions:
 
 - `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`
 
-If the folder or matching file does not exist, no tournament logo is shown.
+If no matching event logo exists when a tournament has no players, `images/pga_logo.png` is used as a fallback. If neither logo is available, only the no-players message is shown.
 
 ## Notes
 

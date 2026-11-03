@@ -13,7 +13,8 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 ROUND_STAT_NAMES = ["Birdies", "Eagles", "Dbl Bogeys", "Bogeys", "Other", "Pars"]
 EVENT_DETAILS_CACHE = {}
 WEATHER_CACHE = {}
-TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "tournament_images"
+TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "images"
+LEGACY_TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "tournament_images"
 
 WEATHER_CODE_DESCRIPTIONS = {
     0: "Clear",
@@ -340,24 +341,26 @@ def get_event_metadata(event):
             location_text = state
 
     logo_path = ""
-    if TOURNAMENT_IMAGE_DIR.exists() and TOURNAMENT_IMAGE_DIR.is_dir():
-        event_id = str(event.get("id", "")).strip()
-        name = str(event.get("name", "")).strip()
-        short_name = str(event.get("shortName", "")).strip()
-        slug_name = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-        slug_short_name = re.sub(r"[^a-z0-9]+", "_", short_name.lower()).strip("_")
+    event_id = str(event.get("id", "")).strip()
+    name = str(event.get("name", "")).strip()
+    short_name = str(event.get("shortName", "")).strip()
+    slug_name = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+    slug_short_name = re.sub(r"[^a-z0-9]+", "_", short_name.lower()).strip("_")
 
-        candidates = []
+    candidates = []
+    for image_dir in (TOURNAMENT_IMAGE_DIR, LEGACY_TOURNAMENT_IMAGE_DIR):
+        if not image_dir.is_dir():
+            continue
         for base in (event_id, short_name, name, slug_short_name, slug_name):
             if not base:
                 continue
             for ext in ("png", "jpg", "jpeg", "webp", "gif"):
-                candidates.append(TOURNAMENT_IMAGE_DIR / f"{base}.{ext}")
+                candidates.append(image_dir / f"{base}.{ext}")
 
-        for candidate in candidates:
-            if candidate.exists() and candidate.is_file():
-                logo_path = str(candidate)
-                break
+    for candidate in candidates:
+        if candidate.is_file():
+            logo_path = str(candidate)
+            break
 
     weather_text = get_location_weather(location_text)
     return course_name, location_text, weather_text, logo_path

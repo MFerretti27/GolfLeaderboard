@@ -104,7 +104,7 @@ To set up directly on the Pi instead, run `bash .github/setup_pi_zero_2w.sh` fro
 
 ## Local Tournament Logos
 
-Tournament images are local-only (no ESPN image dependency).
+Tournament images are local-only (no ESPN image dependency). Matching logos display in both the GUI and the e-paper layout.
 
 Create this folder next to the scripts:
 
@@ -121,7 +121,7 @@ Supported extensions:
 
 - `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`
 
-If folder or matching file does not exist, logo path resolves to an empty string and the GUI hides the image automatically.
+If the folder or matching file does not exist, no tournament logo is shown.
 
 ## Notes
 

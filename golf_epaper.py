@@ -120,6 +120,24 @@ def wrap_text(draw: Any, text: Any, font: Any, max_width: int) -> list[str]:
     return lines
 
 
+def draw_tournament_logo(image: Any, logo_path: str, orientation: str) -> bool:
+    """Draw a matching local tournament logo in the top-right corner."""
+    if not logo_path:
+        return False
+    from PIL import Image
+
+    try:
+        with Image.open(logo_path) as source:
+            logo = source.convert("RGBA")
+        bounds = (120, 72) if orientation == "vertical" else (96, 66)
+        logo.thumbnail(bounds, Image.Resampling.LANCZOS)
+        x = image.width - logo.width - 12
+        image.paste(logo, (x, 8), logo)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def draw_scoreboard(
     event: dict[str, Any] | None,
     updated_at: datetime,
@@ -148,6 +166,7 @@ def draw_scoreboard(
 
     metadata, headers, rows = get_tournament_presentation_data(event, top_n=ROWS_TO_DISPLAY)
     title = event.get("shortName") or event.get("name") or "Golf Leaderboard"
+    has_logo = draw_tournament_logo(image, metadata.get("logo_path", ""), orientation)
     course = metadata.get("course", "")
     location = metadata.get("location", "")
     location_parts = []
@@ -163,12 +182,12 @@ def draw_scoreboard(
     today = metadata.get("today", "")
     context_parts = [part for part in (f"Today: {today}" if today else "", f"TV: {broadcast}" if broadcast else "") if part]
     date_parts = [metadata.get("date_range", "")]
-    if metadata.get("status"):
-        date_parts.append(metadata["status"])
+    if metadata.get("status_description"):
+        date_parts.append(f"Status: {metadata['status_description']}")
     date_line = "  |  ".join(part for part in date_parts if part)
 
     if is_vertical:
-        content_width = 448
+        content_width = 320 if has_logo else 448
         top_y = 8
         for text, font, line_height, x in (
             (title, title_font, 30, 16),
@@ -182,9 +201,11 @@ def draw_scoreboard(
             for line in wrap_text(draw, text, font, content_width):
                 draw.text((x, top_y), line, font=font, fill=text_color)
                 top_y += line_height
+        if has_logo:
+            top_y = max(top_y, 88)
         vertical_table_top = top_y + 8
     else:
-        content_width = 764
+        content_width = 650 if has_logo else 764
         draw.text((16, 8), shorten_text(draw, title, title_font, content_width), font=title_font, fill=text_color)
         draw.text((18, 40), shorten_text(draw, date_line, row_font, content_width), font=row_font, fill=text_color)
         draw.text((18, 62), shorten_text(draw, location_line, row_font, content_width), font=row_font, fill=text_color)

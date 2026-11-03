@@ -380,6 +380,7 @@ def get_tournament_presentation_data(event, top_n=None):
         "title": event.get("shortName", event.get("name", "Tournament")),
         "date_range": format_date_range(event.get("date", ""), event.get("endDate", "")),
         "status": format_status_line(status_desc, status_detail),
+        "status_description": status_desc,
         "course": course_name,
         "location": location_text,
         "weather": weather_text,

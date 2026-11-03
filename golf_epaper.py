@@ -148,23 +148,33 @@ def draw_scoreboard(
 
     metadata, headers, rows = get_tournament_presentation_data(event, top_n=ROWS_TO_DISPLAY)
     title = event.get("shortName") or event.get("name") or "Golf Leaderboard"
-    location_parts = [metadata.get("course", ""), metadata.get("location", "")]
-    location_line = "  |  ".join(str(part) for part in location_parts if part and part != "N/A")
+    course = metadata.get("course", "")
+    location = metadata.get("location", "")
+    location_parts = []
+    if course and course != "N/A":
+        location_parts.append(f"Course: {course}")
+    if location and location != "N/A":
+        location_parts.append(f"Location: {location}")
+    location_line = "  |  ".join(location_parts)
     weather = metadata.get("weather", "")
-    if weather and weather != "N/A":
-        location_line = f"{location_line}  |  {weather}" if location_line else weather
+    weather_line = f"Weather: {weather}" if weather and weather != "N/A" else ""
 
     broadcast = metadata.get("broadcast", "")
     today = metadata.get("today", "")
     context_parts = [part for part in (f"Today: {today}" if today else "", f"TV: {broadcast}" if broadcast else "") if part]
+    date_parts = [metadata.get("date_range", "")]
+    if metadata.get("status"):
+        date_parts.append(metadata["status"])
+    date_line = "  |  ".join(part for part in date_parts if part)
 
     if is_vertical:
         content_width = 448
         top_y = 8
         for text, font, line_height, x in (
             (title, title_font, 30, 16),
-            (f"{metadata.get('date_range', '')}  |  {metadata.get('status', '')}", row_font, 19, 18),
+            (date_line, row_font, 19, 18),
             (location_line, row_font, 19, 18),
+            (weather_line, row_font, 19, 18),
             ("  |  ".join(context_parts), row_font, 19, 18),
         ):
             if not text:
@@ -176,10 +186,13 @@ def draw_scoreboard(
     else:
         content_width = 764
         draw.text((16, 8), shorten_text(draw, title, title_font, content_width), font=title_font, fill=text_color)
-        draw.text((18, 40), shorten_text(draw, f"{metadata.get('date_range', '')}  |  {metadata.get('status', '')}", row_font, content_width), font=row_font, fill=text_color)
+        draw.text((18, 40), shorten_text(draw, date_line, row_font, content_width), font=row_font, fill=text_color)
         draw.text((18, 62), shorten_text(draw, location_line, row_font, content_width), font=row_font, fill=text_color)
+        if weather_line:
+            draw.text((18, 84), shorten_text(draw, weather_line, row_font, content_width), font=row_font, fill=text_color)
         if context_parts:
-            draw.text((18, 84), shorten_text(draw, "  |  ".join(context_parts), row_font, content_width), font=row_font, fill=text_color)
+            context_y = 106 if weather_line else 84
+            draw.text((18, context_y), shorten_text(draw, "  |  ".join(context_parts), row_font, content_width), font=row_font, fill=text_color)
 
     if is_vertical:
         # Portrait layout prioritizes readable names and current scores.
@@ -192,7 +205,7 @@ def draw_scoreboard(
         table_right = 470
     else:
         # Landscape layout also fits each hole score during a live round.
-        table_top = 116
+        table_top = 132
         is_live = bool(metadata.get("is_live"))
         if is_live:
             positions = [12, 54, 222, 282]
@@ -206,7 +219,7 @@ def draw_scoreboard(
             labels = headers[:8]
             positions = [12, 60, 300, 385, 485, 565, 645, 725][:len(labels)]
             column_widths = [42, 230, 78, 92, 72, 72, 72, 64][:len(labels)]
-        rows_to_render = 10
+        rows_to_render = 9
         row_height = 31
         footer_y = 456
         table_right = 790

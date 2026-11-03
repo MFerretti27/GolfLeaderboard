@@ -364,10 +364,10 @@ if __name__ == "__main__":
         if args.size is not None:
             parser.error("--size applies only to screen mode; the PhotoPainter resolution is fixed at 800x480")
         try:
-            try:
-                from GolfLeaderboard.golf_epaper import run_epaper
-            except ModuleNotFoundError:
-                from GolfLeaderboard.golf_epaper import run_epaper
+            if __package__:
+                from .golf_epaper import run_epaper
+            else:
+                from golf_epaper import run_epaper
             run_epaper(args.refresh_seconds or 300, args.driver_path)
         except (ImportError, RuntimeError) as exc:
             parser.error(str(exc))

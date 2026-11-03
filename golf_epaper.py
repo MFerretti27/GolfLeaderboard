@@ -249,9 +249,17 @@ def draw_scoreboard(
         available_rows = max(0, (footer_y - table_top - 38) // row_height)
         rows_to_render = min(ROWS_TO_DISPLAY, available_rows)
 
-    draw.line((10, table_top + 25, table_right, table_top + 25), fill=line_color, width=2)
-    for index, label in enumerate(labels):
-        draw.text((positions[index], table_top), label, font=header_font, fill=text_color)
+    if rows:
+        draw.line((10, table_top + 25, table_right, table_top + 25), fill=line_color, width=2)
+        for index, label in enumerate(labels):
+            draw.text((positions[index], table_top), label, font=header_font, fill=text_color)
+    else:
+        empty_message = "The player field has not been posted yet. Player names will appear here when available."
+        message_width = 448 if is_vertical else 764
+        message_y = table_top + 34
+        for line in wrap_text(draw, empty_message, row_font, message_width):
+            draw.text((18, message_y), line, font=row_font, fill=text_color)
+            message_y += 20
 
     for row_index, row in enumerate(rows[:rows_to_render]):
         y = table_top + 31 + row_index * row_height

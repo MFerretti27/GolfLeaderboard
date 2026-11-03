@@ -10,6 +10,7 @@ readonly DRIVER_DIR="${REPO_ROOT}/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/li
 readonly DRIVER_ZIP_URL="https://files.waveshare.com/wiki/RPi_Zero_PhotoPainter/Demo/RPi_Zero_PhotoPainter.zip"
 readonly SERVICE_NAME="golf-leaderboard-eink.service"
 INSTALL_SERVICE=1
+ORIENTATION="vertical"
 TMP_DIR=""
 SERVICE_TMP=""
 
@@ -21,7 +22,7 @@ trap cleanup EXIT
 
 usage() {
     cat <<'EOF'
-Usage: bash .github/setup_pi_zero_2w.sh [--no-service]
+Usage: bash .github/setup_pi_zero_2w.sh [--orientation vertical|horizontal] [--no-service]
 
 Installs the PhotoPainter-specific e-paper driver and Python system packages,
 enables SPI, and configures the leaderboard to start at boot. Run on the Pi
@@ -30,6 +31,7 @@ from a checkout of this repository.
 Options:
   --no-service   Install dependencies and enable SPI, but do not install or
                  start the systemd service.
+    --orientation  Set the boot service's display layout (default: vertical).
   -h, --help     Show this help.
 EOF
 }
@@ -37,11 +39,21 @@ EOF
 while (($#)); do
     case "$1" in
         --no-service) INSTALL_SERVICE=0 ;;
+        --orientation)
+            (($# >= 2)) || { echo "--orientation requires vertical or horizontal." >&2; exit 2; }
+            ORIENTATION="$2"
+            shift
+            ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
     shift
 done
+
+if [[ "$ORIENTATION" != "vertical" && "$ORIENTATION" != "horizontal" ]]; then
+    echo "Orientation must be 'vertical' or 'horizontal'." >&2
+    exit 2
+fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
     echo "Run this setup script on Raspberry Pi OS on the Pi, not on macOS/Windows." >&2
@@ -152,7 +164,7 @@ User=${RUN_USER}
 Group=${RUN_GROUP}
 WorkingDirectory=${REPO_ROOT}
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 ${REPO_ROOT}/golf_live_gui.py --display eink
+ExecStart=/usr/bin/python3 ${REPO_ROOT}/golf_live_gui.py --display eink --orientation ${ORIENTATION}
 Restart=on-failure
 RestartSec=20
 
@@ -170,7 +182,7 @@ EOF
         echo "SPI is enabled in the boot configuration, but /dev/spidev0.0 is not available yet. Reboot the Pi; the service will start automatically afterward."
     fi
 else
-    echo "SPI and application dependencies are configured. Run the app with: python3 ${REPO_ROOT}/golf_live_gui.py --display eink"
+    echo "SPI and application dependencies are configured. Run the app with: python3 ${REPO_ROOT}/golf_live_gui.py --display eink --orientation ${ORIENTATION}"
 fi
 
 if [[ "${RUN_USER}" != "root" ]]; then

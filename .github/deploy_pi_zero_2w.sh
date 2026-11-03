@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: bash .github/deploy_pi_zero_2w.sh --ip <pi-ip-address> [--user <ssh-user>]
+Usage: bash .github/deploy_pi_zero_2w.sh --ip <pi-ip-address> [--user <ssh-user>] [--orientation vertical|horizontal]
 
 Connects to a Raspberry Pi over SSH, clones/updates this repository, and runs
 its PhotoPainter e-paper setup script. SSH key authentication is recommended.
@@ -11,12 +11,14 @@ its PhotoPainter e-paper setup script. SSH key authentication is recommended.
 Options:
   --ip       Raspberry Pi IP address (required)
   --user     Pi account name (default: pi)
+    --orientation  Boot-service layout (vertical by default)
   -h, --help Show this help.
 EOF
 }
 
 PI_IP=""
 PI_USER="pi"
+ORIENTATION="vertical"
 while (($#)); do
     case "$1" in
         --ip)
@@ -27,6 +29,11 @@ while (($#)); do
         --user)
             (($# >= 2)) || { echo "--user requires a username." >&2; exit 2; }
             PI_USER="$2"
+            shift 2
+            ;;
+        --orientation)
+            (($# >= 2)) || { echo "--orientation requires vertical or horizontal." >&2; exit 2; }
+            ORIENTATION="$2"
             shift 2
             ;;
         -h|--help)
@@ -40,6 +47,11 @@ while (($#)); do
             ;;
     esac
 done
+
+if [[ "$ORIENTATION" != "vertical" && "$ORIENTATION" != "horizontal" ]]; then
+    echo "Orientation must be 'vertical' or 'horizontal'." >&2
+    exit 2
+fi
 
 if [[ -z "$PI_IP" ]]; then
     echo "Provide the Pi's IP address with --ip." >&2
@@ -64,17 +76,18 @@ fi
 
 REPO_URL_B64="$(printf '%s' "$REPO_URL" | base64 | tr -d '\n')"
 BRANCH_B64="$(printf '%s' "$BRANCH" | base64 | tr -d '\n')"
-REMOTE_COMMAND="bash -s -- ${REPO_URL_B64} ${BRANCH_B64}"
+REMOTE_COMMAND="bash -s -- ${REPO_URL_B64} ${BRANCH_B64} ${ORIENTATION}"
 
 printf 'Connecting to %s@%s; deploying branch %s from %s\n' "$PI_USER" "$PI_IP" "$BRANCH" "$REPO_URL"
 printf 'SSH may prompt for your Pi password, and setup may prompt for sudo.\n'
 
 # Base64 arguments keep the SSH command safely quoted. The script body is sent
 # over stdin, so nothing needs to be copied to the Pi ahead of time.
-ssh -t "${PI_USER}@${PI_IP}" "$REMOTE_COMMAND" <<'REMOTE_SCRIPT'
+ssh -tt "${PI_USER}@${PI_IP}" "$REMOTE_COMMAND" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
 REPO_URL="$(printf '%s' "$1" | base64 --decode)"
 BRANCH="$(printf '%s' "$2" | base64 --decode)"
+ORIENTATION="$3"
 REPO_DIR="$HOME/GolfLeaderboard"
 
 if [[ -d "$REPO_DIR/.git" ]]; then
@@ -95,5 +108,5 @@ else
 fi
 
 cd "$REPO_DIR"
-bash .github/setup_pi_zero_2w.sh
+bash .github/setup_pi_zero_2w.sh --orientation "$ORIENTATION"
 REMOTE_SCRIPT

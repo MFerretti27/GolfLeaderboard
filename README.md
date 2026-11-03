@@ -54,6 +54,18 @@ python3 golf_live_gui.py --display eink
 
 E-ink mode uses the panel's hardware driver directly; it does not open a desktop GUI. The default refresh interval is five minutes. The regular screen mode continues to use FreeSimpleGUI and refreshes every 30 seconds.
 
+E-paper defaults to a vertical leaderboard (rotate the panel to portrait). To use the panel horizontally, select the landscape layout:
+
+```bash
+python3 golf_live_gui.py --display eink --orientation horizontal
+```
+
+Use `--orientation vertical` to select portrait explicitly. Set the boot service's layout during remote deployment with `--orientation horizontal`; vertical remains the default:
+
+```bash
+bash .github/deploy_pi_zero_2w.sh --ip 192.168.1.42 --user pi --orientation horizontal
+```
+
 ### PhotoPainter setup
 
 Use the driver/demo for the **RPi Zero PhotoPainter**, not a generic 7.3-inch Waveshare driver. The board has a different display power pin (BCM GPIO 27). Follow the [Waveshare PhotoPainter guide](https://www.waveshare.com/wiki/RPi_Zero_PhotoPainter), enable SPI with `sudo raspi-config`, and run the vendor's e-paper demo before using this app.

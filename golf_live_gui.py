@@ -357,6 +357,12 @@ if __name__ == "__main__":
         "--driver-path",
         help="PhotoPainter demo's 7in3_e-Paper_E/python/lib folder (e-ink mode only)",
     )
+    parser.add_argument(
+        "--orientation",
+        choices=("vertical", "horizontal"),
+        default="vertical",
+        help="e-paper layout orientation (defaults to vertical)",
+    )
     args = parser.parse_args()
     if args.refresh_seconds is not None and args.refresh_seconds < 1:
         parser.error("--refresh-seconds must be at least 1")
@@ -368,7 +374,7 @@ if __name__ == "__main__":
                 from .golf_epaper import run_epaper
             else:
                 from golf_epaper import run_epaper
-            run_epaper(args.refresh_seconds or 300, args.driver_path)
+            run_epaper(args.refresh_seconds or 300, args.driver_path, args.orientation)
         except (ImportError, RuntimeError) as exc:
             parser.error(str(exc))
     else:

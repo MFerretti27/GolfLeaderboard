@@ -415,7 +415,7 @@ def get_tournament_presentation_data(event, top_n=None):
 
             rows.append([
                 str(safe_int(competitor.get("order"), default=0) or "?"),
-                athlete.get("shortName", athlete.get("displayName", "Unknown")),
+                athlete.get("displayName", athlete.get("shortName", "Unknown")),
                 format_score(competitor.get("score", "E")),
                 today_score,
                 *hole_values,
@@ -429,7 +429,7 @@ def get_tournament_presentation_data(event, top_n=None):
         athlete = competitor.get("athlete", {})
         rows.append([
             str(safe_int(competitor.get("order"), default=0) or "?"),
-            athlete.get("shortName", athlete.get("displayName", "Unknown")),
+            athlete.get("displayName", athlete.get("shortName", "Unknown")),
             str(athlete.get("flag", {}).get("alt", ""))[:4],
             format_score(competitor.get("score", "E")),
             *[get_round_score(competitor, round_number) for round_number in range(1, max_rounds + 1)],

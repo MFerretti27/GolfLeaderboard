@@ -27,11 +27,31 @@ A lightweight PGA leaderboard project with two entry points:
 
 ## Requirements
 
-Install dependencies:
+### Desktop / manual install
+
+No `.env` file is required. The checked-in `.env.example` contains legacy settings that the current application does not read; changing those values will not configure the app.
+
+For a manual Python install, create and activate a virtual environment, then install dependencies:
 
 ```bash
-pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
+
+On Windows, activate with `.venv\Scripts\activate` instead of the `source` command.
+
+Alternatively, run through `main.py`; it creates a `venv/` directory automatically if needed and installs `requirements.txt` before starting the GUI:
+
+```bash
+python3 main.py
+```
+
+To run `golf.py` or `golf_live_gui.py` directly, use the activated environment after installing requirements.
+
+### Raspberry Pi e-paper
+
+For the Waveshare RPi Zero PhotoPainter E6, choose either a **manual launch** (you start the app yourself after boot) or **automatic startup** (systemd starts it at boot). Both require a Raspberry Pi Zero 2 W running Raspberry Pi OS, internet access during setup, and the PhotoPainter panel connected to the Pi. No `.env` file or Python virtual environment is needed on the Pi.
 
 ## Run
 
@@ -42,7 +62,7 @@ python3 golf.py
 python3 golf_live_gui.py
 ```
 
-`main.py` also creates/uses the project virtual environment and forwards display options, for example `python3 main.py --display eink`.
+`main.py` creates/uses the project virtual environment and forwards display options, for example `python3 main.py --display eink`.
 
 ### Display profiles
 
@@ -66,27 +86,82 @@ Use `--orientation vertical` to select portrait explicitly. Set the boot service
 bash .github/deploy_pi_zero_2w.sh --ip 192.168.1.42 --user pi --orientation horizontal
 ```
 
-### PhotoPainter setup
+### PhotoPainter hardware
 
-Use the driver/demo for the **RPi Zero PhotoPainter**, not a generic 7.3-inch Waveshare driver. The board has a different display power pin (BCM GPIO 27). Follow the [Waveshare PhotoPainter guide](https://www.waveshare.com/wiki/RPi_Zero_PhotoPainter), enable SPI with `sudo raspi-config`, and run the vendor's e-paper demo before using this app.
+Use the driver/demo for the **RPi Zero PhotoPainter**, not a generic 7.3-inch Waveshare driver. The board has a different display power pin (BCM GPIO 27). Connect the panel according to the [Waveshare PhotoPainter guide](https://www.waveshare.com/wiki/RPi_Zero_PhotoPainter).
 
-Download and extract the [official PhotoPainter demo](https://files.waveshare.com/wiki/RPi_Zero_PhotoPainter/Demo/RPi_Zero_PhotoPainter.zip). If its driver library is not in the default expected location, pass the path to its `7in3_e-Paper_E/python/lib` folder:
+### Option 1: Manual launch
+
+This option has you install the prerequisites yourself and start the app when wanted. It does **not** install a boot service. Run these commands on Raspberry Pi OS:
+
+1. Clone the repository and enter it (replace the URL if using a fork):
+
+    ```bash
+    git clone https://github.com/MFerretti27/GolfLeaderboard.git
+    cd GolfLeaderboard
+    ```
+
+2. Install the system packages required by the app and Waveshare driver:
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y python3 python3-pil python3-requests python3-rpi.gpio python3-spidev curl unzip
+   ```
+
+3. Enable SPI and download/extract the PhotoPainter-specific Waveshare driver:
+
+   ```bash
+   sudo raspi-config nonint do_spi 0
+   mkdir -p RPi_Zero_PhotoPainter
+   curl -fL https://files.waveshare.com/wiki/RPi_Zero_PhotoPainter/Demo/RPi_Zero_PhotoPainter.zip -o /tmp/photo-painter-demo.zip
+   unzip -oq /tmp/photo-painter-demo.zip -d RPi_Zero_PhotoPainter
+   ```
+
+   Confirm this driver file exists: `RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib/waveshare_epd/epd7in3e.py`.
+
+4. Ensure your Pi account can access SPI/GPIO, then reboot so SPI and group changes take effect:
+
+   ```bash
+   sudo usermod -aG spi,gpio "$USER"
+   sudo reboot
+   ```
+
+5. After the Pi reboots, SSH back in (or use its local terminal), enter `~/GolfLeaderboard`, and start the app:
+
+   ```bash
+   cd ~/GolfLeaderboard
+   python3 golf_live_gui.py --display eink
+   ```
+
+The manual command runs in the foreground; stop it with Ctrl+C. Vertical is the default. Add `--orientation horizontal` for landscape, or `--refresh-seconds 600` for a ten-minute refresh interval.
+
+### Option 2: Automatic startup at boot
+
+This option installs the same prerequisites and configures a systemd service to start the leaderboard automatically at boot. You can run setup directly on the Pi:
 
 ```bash
-python3 golf_live_gui.py --display eink --driver-path /path/to/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib
+git clone https://github.com/MFerretti27/GolfLeaderboard.git
+cd GolfLeaderboard
+bash .github/setup_pi_zero_2w.sh
 ```
 
-Install `requests` and Pillow for the app, plus the SPI/GPIO dependencies required by the Waveshare demo. E-ink mode loads the driver only when selected, so a desktop-only setup does not need the Waveshare library. To change the refresh interval, add `--refresh-seconds 600` (for ten minutes).
-
-You can run setup directly on the Pi as described below, or launch it remotely from a Mac/Linux computer with SSH access and Git installed. The remote helper clones or updates the current branch under `~/GolfLeaderboard`, then runs the same Pi setup script. Push the branch to `origin` first so the Pi can clone it.
+Or launch setup remotely from a Mac/Linux computer with SSH and Git installed. Push the desired branch to GitHub first; the helper clones or fast-forward-updates that branch under `~/GolfLeaderboard` on the Pi, then runs the Pi setup script:
 
 ```bash
 bash .github/deploy_pi_zero_2w.sh --ip 192.168.1.42 --user pi
 ```
 
-Replace the example address and username with your Pi's values. SSH key login is recommended; the command may prompt for the Pi account password and the setup script may prompt for sudo. Once installed, the leaderboard runs as a systemd service and does not depend on the SSH session staying open.
+Replace the example IP and username with the Pi's values. SSH access and sudo permission are required; SSH may prompt for the Pi account password and setup may prompt for the sudo password. Add `--orientation horizontal` to configure the boot service for landscape (vertical is the default).
 
-To set up directly on the Pi instead, run `bash .github/setup_pi_zero_2w.sh` from the repository checkout. The script installs Raspberry Pi OS packages, enables SPI, downloads the PhotoPainter-specific driver if it is missing, and enables a systemd service to start the e-paper leaderboard at boot. Use `--no-service` if you only want to install the dependencies and run the app manually. Reboot if the script reports that SPI is not available yet.
+The Pi setup script installs Raspberry Pi OS packages for Python, Pillow, requests, GPIO, SPI, curl, and unzip; enables SPI; downloads the official PhotoPainter demo driver if it is missing; adds the account to available `spi` and `gpio` groups; and installs/enables/starts `golf-leaderboard-eink.service`. The service runs independently of SSH, starts again after reboot, and restarts if the app exits unexpectedly. It refreshes every five minutes by default. If setup reports that `/dev/spidev0.0` is unavailable, reboot the Pi; SPI changes and group membership also take effect after logging out/in or rebooting.
+
+Check automatic service logs on the Pi with:
+
+```bash
+sudo journalctl -u golf-leaderboard-eink.service -f
+```
+
+Use `bash .github/setup_pi_zero_2w.sh --no-service` if you want the setup script to prepare dependencies and SPI but do not want automatic startup.
 
 ## GUI Controls
 
@@ -125,5 +200,5 @@ If the folder or matching file does not exist, no tournament logo is shown.
 
 ## Notes
 
-- Weather currently displays `N/A` unless you add a separate weather source.
+- Weather is fetched from Open-Meteo using the tournament course location; it displays `N/A` when the location cannot be resolved or weather data is unavailable.
 - Column visibility is dynamic in the GUI, so unused columns are hidden.

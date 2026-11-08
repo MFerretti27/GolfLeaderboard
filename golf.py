@@ -1,10 +1,12 @@
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import re
+from time import monotonic
 
 SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
 CORE_EVENT_URL = "https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/{event_id}"
+PLAYER_SUMMARY_URL = "https://site.web.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard/{event_id}/playersummary"
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -12,6 +14,7 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 # Order: birdies, eagles, double_bogeys, bogeys, other, pars
 ROUND_STAT_NAMES = ["Birdies", "Eagles", "Dbl Bogeys", "Bogeys", "Other", "Pars"]
 EVENT_DETAILS_CACHE = {}
+PLAYER_TEE_TIME_CACHE = {}
 WEATHER_CACHE = {}
 TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "images"
 LEGACY_TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "tournament_images"
@@ -264,9 +267,19 @@ def get_current_round_linescore(competitor):
     return latest
 
 
-def get_round_hole_progress(competitor):
+def get_round_hole_progress(competitor, round_number=None):
     """Return holes completed in the current round, or F when all 18 are played."""
-    round_linescore = get_current_round_linescore(competitor)
+    if round_number is None:
+        round_linescore = get_current_round_linescore(competitor)
+    else:
+        round_linescore = next(
+            (
+                linescore
+                for linescore in competitor.get("linescores", [])
+                if safe_int(linescore.get("period"), default=0) == round_number
+            ),
+            None,
+        )
     if not round_linescore:
         return "-"
 
@@ -276,9 +289,9 @@ def get_round_hole_progress(competitor):
             continue
         score_type = hole.get("scoreType", {})
         if (
-            hole.get("value") not in (None, "")
-            or hole.get("displayValue") not in (None, "")
-            or (isinstance(score_type, dict) and score_type.get("displayValue") not in (None, ""))
+            hole.get("value") not in (None, "", "-")
+            or hole.get("displayValue") not in (None, "", "-")
+            or (isinstance(score_type, dict) and score_type.get("displayValue") not in (None, "", "-"))
         ):
             played_holes += 1
 
@@ -307,6 +320,99 @@ def get_current_round_number(competition):
             if isinstance(period, int) and linescore.get("linescores"):
                 current_round = max(current_round, period)
     return current_round
+
+
+def get_scheduled_round_number(competition):
+    """Return the active round, advancing past a round marked complete."""
+    status = competition.get("status", {})
+    status_type = status.get("type", {})
+    period = safe_int(status.get("period"), default=0)
+    if period:
+        if str(status_type.get("state", "")).lower() == "post" or status_type.get("completed") is True:
+            return period + 1
+        return period
+    return max(get_current_round_number(competition), 1)
+
+
+def _round_has_started(linescore):
+    """Return whether any hole in a round has a posted score."""
+    if not linescore:
+        return False
+    if linescore.get("displayValue") not in (None, "", "-"):
+        return True
+    for hole in linescore.get("linescores", []):
+        if not isinstance(hole, dict):
+            continue
+        score_type = hole.get("scoreType", {})
+        if (
+            hole.get("value") not in (None, "", "-")
+            or hole.get("displayValue") not in (None, "", "-")
+            or (isinstance(score_type, dict) and score_type.get("displayValue") not in (None, "", "-"))
+        ):
+            return True
+    return False
+
+
+def get_player_tee_off_time(event, competition, competitor):
+    """Return an unstarted player's tee time in the device's local timezone."""
+    round_number = get_scheduled_round_number(competition)
+    current_round = next(
+        (
+            linescore
+            for linescore in competitor.get("linescores", [])
+            if safe_int(linescore.get("period"), default=0) == round_number
+        ),
+        None,
+    )
+    if _round_has_started(current_round):
+        return ""
+
+    event_id = str(event.get("id", "")).strip()
+    player_id = str(competitor.get("id", "")).strip()
+    season = event.get("season", {})
+    if isinstance(season, dict):
+        season = season.get("year")
+    season = str(season or str(event.get("date", ""))[:4]).strip()
+    if not event_id or not player_id or not season:
+        return ""
+
+    cache_key = (event_id, season, player_id, round_number)
+    now = monotonic()
+    cached = PLAYER_TEE_TIME_CACHE.get(cache_key)
+    if cached:
+        cache_seconds = 900 if cached[1] else 60
+        if now - cached[0] < cache_seconds:
+            return cached[1]
+
+    tee_time = ""
+    try:
+        response = requests.get(
+            PLAYER_SUMMARY_URL.format(event_id=event_id),
+            params={"season": season, "player": player_id},
+            timeout=10,
+        )
+        response.raise_for_status()
+        rounds = response.json().get("rounds", [])
+    except (requests.RequestException, ValueError, TypeError):
+        rounds = []
+
+    for round_data in rounds:
+        if safe_int(round_data.get("period"), default=0) != round_number:
+            continue
+        raw_tee_time = round_data.get("teeTime")
+        if not raw_tee_time:
+            break
+        try:
+            parsed_time = datetime.fromisoformat(str(raw_tee_time).replace("Z", "+00:00"))
+            if parsed_time.tzinfo is None:
+                parsed_time = parsed_time.replace(tzinfo=timezone.utc)
+            tee_time = parsed_time.astimezone().strftime("%I:%M %p").lstrip("0")
+        except ValueError:
+            tee_time = ""
+        break
+
+    PLAYER_TEE_TIME_CACHE[cache_key] = (now, tee_time)
+    return tee_time
 
 
 def get_status_text(event, competition):
@@ -417,13 +523,20 @@ def get_tournament_presentation_data(event, top_n=None):
     }
 
     if metadata["is_live"]:
-        current_round = get_current_round_number(competition)
-        if current_round:
-            metadata["today"] = f"Round {current_round}"
+        scheduled_round = get_scheduled_round_number(competition)
+        if scheduled_round:
+            metadata["today"] = f"Round {scheduled_round}"
 
         hole_count = 18
         for competitor in competitors:
-            round_linescore = get_current_round_linescore(competitor)
+            round_linescore = next(
+                (
+                    linescore
+                    for linescore in competitor.get("linescores", [])
+                    if safe_int(linescore.get("period"), default=0) == scheduled_round
+                ),
+                None,
+            )
             if round_linescore and round_linescore.get("linescores"):
                 hole_count = max(hole_count, len(round_linescore.get("linescores", [])))
         hole_count = min(hole_count, 18)
@@ -432,11 +545,19 @@ def get_tournament_presentation_data(event, top_n=None):
         rows = []
         for competitor in competitors:
             athlete = competitor.get("athlete", {})
-            round_linescore = get_current_round_linescore(competitor)
+            round_linescore = next(
+                (
+                    linescore
+                    for linescore in competitor.get("linescores", [])
+                    if safe_int(linescore.get("period"), default=0) == scheduled_round
+                ),
+                None,
+            )
             today_score = "-"
             hole_values = ["-"] * hole_count
             if round_linescore:
-                today_score = round_linescore.get("displayValue", "-")
+                if _round_has_started(round_linescore):
+                    today_score = round_linescore.get("displayValue") or "-"
                 for idx, hole in enumerate(round_linescore.get("linescores", [])[:hole_count]):
                     hole_values[idx] = get_hole_display_value(hole)
 

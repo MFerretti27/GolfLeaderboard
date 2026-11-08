@@ -4,6 +4,7 @@ import importlib
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,14 +12,18 @@ from typing import Any
 if __package__:
     from .golf import (
         get_preferred_events,
+        get_player_tee_off_time,
         get_round_hole_progress,
+        get_scheduled_round_number,
         get_tournament_presentation_data,
         safe_int,
     )
 else:
     from golf import (
         get_preferred_events,
+        get_player_tee_off_time,
         get_round_hole_progress,
+        get_scheduled_round_number,
         get_tournament_presentation_data,
         safe_int,
     )
@@ -145,6 +150,7 @@ def draw_scoreboard(
     image = Image.new("RGB", canvas_size, GREEN)
     draw = ImageDraw.Draw(image)
     title_font, header_font, row_font = load_fonts()
+    tee_time_font = row_font
     text_color = WHITE
     line_color = WHITE
     image_rotation = Image.Transpose.ROTATE_90 if is_vertical else Image.Transpose.ROTATE_180
@@ -200,11 +206,22 @@ def draw_scoreboard(
             competition.get("competitors", []),
             key=lambda competitor: safe_int(competitor.get("order")),
         )[:len(rows)]
+        scheduled_round = get_scheduled_round_number(competition)
+        tee_times = []
+        if competitors:
+            with ThreadPoolExecutor(max_workers=min(6, len(competitors))) as executor:
+                tee_times = list(
+                    executor.map(
+                        lambda competitor: get_player_tee_off_time(event, competition, competitor),
+                        competitors,
+                    )
+                )
         vertical_live_rows = []
-        for row, competitor in zip(rows, competitors):
-            progress = get_round_hole_progress(competitor)
+        for row, competitor, tee_time in zip(rows, competitors, tee_times):
+            progress = get_round_hole_progress(competitor, scheduled_round)
             total = f"{row[2]}({progress})" if progress != "-" else row[2]
-            vertical_live_rows.append([row[0], row[1], total])
+            today = tee_time or row[3] or "-"
+            vertical_live_rows.append([row[0], row[1], total, today])
     title = event.get("shortName") or event.get("name") or "Golf Leaderboard"
     course = metadata.get("course", "")
     location = metadata.get("location", "")
@@ -256,9 +273,16 @@ def draw_scoreboard(
         # Portrait layout prioritizes readable names and current scores.
         table_top = vertical_table_top
         if metadata.get("is_live"):
-            positions = [12, 72, 342]
-            labels = ["Pos", "Player", "Tot"]
-            column_widths = [50, 260, 120]
+            try:
+                tee_time_font = ImageFont.truetype(row_font.path, 12)
+            except (AttributeError, OSError):
+                try:
+                    tee_time_font = ImageFont.load_default(size=12)
+                except TypeError:
+                    tee_time_font = row_font
+            positions = [12, 72, 334, 407]
+            labels = ["Pos", "Player", "Tot", "Today"]
+            column_widths = [50, 252, 65, 63]
         else:
             positions = [12, 72, 342, 408]
             labels = ["Pos", "Player", "Ctry", "Tot"]
@@ -354,7 +378,21 @@ def draw_scoreboard(
         for column_index, value in enumerate(row[:visible_columns]):
             max_width = column_widths[column_index] - 4
             is_hole_column = not is_vertical and metadata.get("is_live") and column_index >= 4
-            font = hole_font if is_hole_column else header_font if column_index == 1 else row_font
+            is_tee_time = (
+                is_vertical
+                and metadata.get("is_live")
+                and column_index == 3
+                and str(value).endswith((" AM", " PM"))
+            )
+            font = (
+                hole_font
+                if is_hole_column
+                else tee_time_font
+                if is_tee_time
+                else header_font
+                if column_index == 1
+                else row_font
+            )
             text = shorten_text(draw, value, font, max_width)
             if is_hole_column:
                 center_x = positions[column_index] + column_widths[column_index] / 2

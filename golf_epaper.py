@@ -9,9 +9,19 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from .golf import get_preferred_events, get_tournament_presentation_data
+    from .golf import (
+        get_preferred_events,
+        get_round_hole_progress,
+        get_tournament_presentation_data,
+        safe_int,
+    )
 else:
-    from golf import get_preferred_events, get_tournament_presentation_data
+    from golf import (
+        get_preferred_events,
+        get_round_hole_progress,
+        get_tournament_presentation_data,
+        safe_int,
+    )
 
 DISPLAY_WIDTH = 800
 DISPLAY_HEIGHT = 480
@@ -183,6 +193,18 @@ def draw_scoreboard(
         return image.transpose(image_rotation) if image_rotation is not None else image
 
     metadata, headers, rows = get_tournament_presentation_data(event, top_n=ROWS_TO_DISPLAY)
+    vertical_live_rows = None
+    if is_vertical and metadata.get("is_live"):
+        competition = event.get("competitions", [{}])[0]
+        competitors = sorted(
+            competition.get("competitors", []),
+            key=lambda competitor: safe_int(competitor.get("order")),
+        )[:len(rows)]
+        vertical_live_rows = []
+        for row, competitor in zip(rows, competitors):
+            progress = get_round_hole_progress(competitor)
+            total = f"{row[2]}({progress})" if progress != "-" else row[2]
+            vertical_live_rows.append([row[0], row[1], total])
     title = event.get("shortName") or event.get("name") or "Golf Leaderboard"
     course = metadata.get("course", "")
     location = metadata.get("location", "")
@@ -233,9 +255,14 @@ def draw_scoreboard(
     if is_vertical:
         # Portrait layout prioritizes readable names and current scores.
         table_top = vertical_table_top
-        positions = [12, 72, 342, 408]
-        labels = ["Pos", "Player", "Tot", "Today"] if metadata.get("is_live") else ["Pos", "Player", "Ctry", "Tot"]
-        column_widths = [50, 260, 56, 64]
+        if metadata.get("is_live"):
+            positions = [12, 72, 342]
+            labels = ["Pos", "Player", "Tot"]
+            column_widths = [50, 260, 120]
+        else:
+            positions = [12, 72, 342, 408]
+            labels = ["Pos", "Player", "Ctry", "Tot"]
+            column_widths = [50, 260, 56, 64]
         row_height = 32
         footer_y = 770
         table_right = 470
@@ -309,9 +336,10 @@ def draw_scoreboard(
         message_x = (image.width - message_width) / 2
         draw.text((message_x, message_y), empty_message, font=message_font, fill=text_color)
 
-    for row_index, row in enumerate(rows[:rows_to_render]):
+    display_rows = vertical_live_rows if vertical_live_rows is not None else rows
+    for row_index, row in enumerate(display_rows[:rows_to_render]):
         y = table_top + 31 + row_index * row_height
-        visible_columns = len(positions) if not is_vertical and metadata.get("is_live") else 4 if is_vertical else len(positions)
+        visible_columns = len(positions)
         for column_index, value in enumerate(row[:visible_columns]):
             max_width = column_widths[column_index] - 4
             font = header_font if column_index == 1 else row_font

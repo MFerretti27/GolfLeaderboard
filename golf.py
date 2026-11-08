@@ -264,6 +264,29 @@ def get_current_round_linescore(competitor):
     return latest
 
 
+def get_round_hole_progress(competitor):
+    """Return holes completed in the current round, or F when all 18 are played."""
+    round_linescore = get_current_round_linescore(competitor)
+    if not round_linescore:
+        return "-"
+
+    played_holes = 0
+    for hole in round_linescore.get("linescores", []):
+        if not isinstance(hole, dict):
+            continue
+        score_type = hole.get("scoreType", {})
+        if (
+            hole.get("value") not in (None, "")
+            or hole.get("displayValue") not in (None, "")
+            or (isinstance(score_type, dict) and score_type.get("displayValue") not in (None, ""))
+        ):
+            played_holes += 1
+
+    if played_holes >= 18:
+        return "F"
+    return str(played_holes) if played_holes else "-"
+
+
 def get_hole_display_value(hole):
     """Return the score display for a hole, preferring relative score."""
     score_type = hole.get("scoreType", {}).get("displayValue")

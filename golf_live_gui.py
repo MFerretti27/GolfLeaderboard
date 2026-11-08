@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from datetime import datetime
 from pathlib import Path
 
 if __package__:
-    from .golf import get_preferred_events, get_tournament_presentation_data
+    from .golf import get_player_tee_off_time, get_preferred_events, get_tournament_presentation_data, safe_int
 else:
-    from golf import get_preferred_events, get_tournament_presentation_data
+    from golf import get_player_tee_off_time, get_preferred_events, get_tournament_presentation_data, safe_int
 
 WINDOW_SIZE = (1400, 900)
 AUTO_REFRESH_MS = 30000
 TOP_N_DISPLAY: int | None = 25
 MAX_GRID_COLUMNS = 22
 MAX_GRID_ROWS = 25
+SCREEN_ORIENTATION: str | None = None
 LOGO_CACHE: dict[str, bytes] = {}
 THEME = "DarkGreen5"
 WINDOW_TITLE = "Golf Live Tournaments"
@@ -49,9 +51,14 @@ TEXT_COLOR_GRID = "#111111"
 Sg: Any = None
 
 
-def configure_display(mode: str, size: tuple[int, int] | None = None, refresh_seconds: int | None = None) -> None:
-    """Apply a monitor or high-contrast e-ink display profile."""
-    global WINDOW_SIZE, AUTO_REFRESH_MS, TOP_N_DISPLAY, MAX_GRID_ROWS
+def configure_display(
+    mode: str,
+    size: tuple[int, int] | None = None,
+    refresh_seconds: int | None = None,
+    orientation: str | None = None,
+) -> None:
+    """Apply screen dimensions and visual settings for the dashboard."""
+    global WINDOW_SIZE, AUTO_REFRESH_MS, TOP_N_DISPLAY, MAX_GRID_COLUMNS, MAX_GRID_ROWS, SCREEN_ORIENTATION
     global THEME, FONT_GRID_SIZE, FONT_META_SIZE, FONT_INFO_SIZE, FONT_TITLE_SIZE
     global FONT_GRID_HEADER, FONT_GRID_CELL, FONT_TITLE, FONT_META, FONT_INFO, FONT_INFO_BOLD
     global FONT_LAST_UPDATE, ROW_BG_EVEN, ROW_BG_ODD, ROW_BG_HEADER
@@ -61,6 +68,7 @@ def configure_display(mode: str, size: tuple[int, int] | None = None, refresh_se
         WINDOW_SIZE = size or (800, 600)
         AUTO_REFRESH_MS = (refresh_seconds if refresh_seconds is not None else 300) * 1000
         TOP_N_DISPLAY = 12
+        MAX_GRID_COLUMNS = 22
         MAX_GRID_ROWS = 12
         THEME = "LightGrey1"
         FONT_GRID_SIZE, FONT_META_SIZE, FONT_INFO_SIZE, FONT_TITLE_SIZE = 14, 14, 14, 24
@@ -68,9 +76,12 @@ def configure_display(mode: str, size: tuple[int, int] | None = None, refresh_se
         ROW_BG_ODD = "#e6e6e6"
         TEXT_COLOR_PRIMARY = TEXT_COLOR_GRID = "#000000"
     else:
-        WINDOW_SIZE = size or (1400, 900)
+        SCREEN_ORIENTATION = orientation
+        default_size = (900, 1400) if orientation == "vertical" else (1400, 900)
+        WINDOW_SIZE = size or default_size
         AUTO_REFRESH_MS = (refresh_seconds if refresh_seconds is not None else 30) * 1000
         TOP_N_DISPLAY = 25
+        MAX_GRID_COLUMNS = 7 if orientation == "vertical" else 22
         MAX_GRID_ROWS = 25
         THEME = "DarkGreen5"
         FONT_GRID_SIZE, FONT_META_SIZE, FONT_INFO_SIZE, FONT_TITLE_SIZE = 16, 16, 14, 30
@@ -122,13 +133,37 @@ def fetch_logo_bytes(logo_path: str) -> bytes | None:
 
 def get_column_width(column_index: int) -> int:
     """Return a fixed character width for each leaderboard column."""
+    if SCREEN_ORIENTATION == "vertical":
+        if column_index == 0:
+            return 5
+        if column_index == 1:
+            return 24
+        if column_index == 2:
+            return 6
+        if column_index == 3:
+            return 8
+        return 6
     if column_index == 0:
         return 5
     if column_index == 1:
         return 18
-    if column_index in (2, 3):
+    if column_index == 3:
+        return 10
+    if column_index == 2:
         return 6
     return 4
+
+
+def fit_grid_value(value: Any, column_index: int) -> str:
+    """Add an ellipsis to player names that are too long for the grid cell."""
+    text = str(value)
+    if column_index != 1:
+        return text
+
+    max_characters = max(3, get_column_width(column_index) - 2)
+    if len(text) <= max_characters:
+        return text
+    return f"{text[:max_characters - 3].rstrip()}..."
 
 
 def build_grid_layout() -> list[list[Any]]:
@@ -173,7 +208,7 @@ def build_grid_layout() -> list[list[Any]]:
 
 
 def build_main_layout() -> list[list[Any]]:
-    """Create a structured leaderboard layout for e-ink style display."""
+    """Create the LCD leaderboard layout."""
     Sg.theme(THEME)
 
     return [
@@ -217,19 +252,48 @@ def get_next_event_index(events: list[dict[str, Any]], current_index: int | None
     return (current_index + 1) % len(events)
 
 
+def add_tee_times_to_live_rows(event: dict[str, Any], rows: list[list[str]]) -> None:
+    """Fill blank Today cells with tee times for players who have not started."""
+    if not rows:
+        return
+
+    competition = event.get("competitions", [{}])[0]
+    competitors = sorted(
+        competition.get("competitors", []),
+        key=lambda competitor: safe_int(competitor.get("order")),
+    )[:len(rows)]
+    pending = [
+        (row_index, competitors[row_index])
+        for row_index, row in enumerate(rows)
+        if len(row) > 3 and row[3] == "-" and row_index < len(competitors)
+    ]
+    if not pending:
+        return
+
+    with ThreadPoolExecutor(max_workers=min(6, len(pending))) as executor:
+        tee_times = executor.map(
+            lambda item: get_player_tee_off_time(event, competition, item[1]),
+            pending,
+        )
+        for (row_index, _), tee_time in zip(pending, tee_times):
+            if tee_time:
+                rows[row_index][3] = tee_time
+
+
 def run_gui(
     display: str = "screen",
     size: tuple[int, int] | None = None,
     refresh_seconds: int | None = None,
+    orientation: str | None = None,
 ) -> None:
-    """Run the golf live tournament GUI for a monitor or e-ink display."""
+    """Run the golf live tournament LCD dashboard."""
     global Sg
     try:
         import FreeSimpleGUI as Sg  # type: ignore[import]
     except ImportError as exc:
         raise RuntimeError("FreeSimpleGUI is required for screen mode. Install it with pip.") from exc
 
-    configure_display(display, size, refresh_seconds)
+    configure_display(display, size, refresh_seconds, orientation)
     try:
         live_events = get_preferred_events()
     except Exception as exc:
@@ -256,7 +320,10 @@ def run_gui(
 
         for row_index in range(MAX_GRID_ROWS):
             row_values = rows[row_index] if row_index < len(rows) else []
-            padded_row = [str(value) for value in row_values[:MAX_GRID_COLUMNS]] + [""] * (MAX_GRID_COLUMNS - len(row_values))
+            padded_row = [
+                fit_grid_value(value, column_index)
+                for column_index, value in enumerate(row_values[:MAX_GRID_COLUMNS])
+            ] + [""] * (MAX_GRID_COLUMNS - len(row_values))
             for column_index, value in enumerate(padded_row):
                 is_visible = column_index < active_column_count
                 window[f"CELL_{row_index}_{column_index}"].update(value if is_visible else "", visible=is_visible)
@@ -280,6 +347,12 @@ def run_gui(
         next_index = get_next_event_index(events, index)
         current_event = events[next_index]
         metadata, headers, rows = get_tournament_presentation_data(current_event, top_n=TOP_N_DISPLAY)
+        if metadata.get("is_live"):
+            add_tee_times_to_live_rows(current_event, rows)
+        if orientation == "vertical":
+            visible_columns = 4 if metadata.get("is_live") else MAX_GRID_COLUMNS
+            headers = headers[:visible_columns]
+            rows = [row[:visible_columns] for row in rows]
         update_grid(headers, rows)
         event_name = current_event.get("shortName", current_event.get("name", "Tournament"))
         window["TITLE"].update(str(event_name))
@@ -360,8 +433,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--orientation",
         choices=("vertical", "horizontal"),
-        default="vertical",
-        help="e-paper layout orientation (defaults to vertical)",
+        default=None,
+        help="LCD window/layout orientation, or e-ink panel layout orientation",
     )
     args = parser.parse_args()
     if args.refresh_seconds is not None and args.refresh_seconds < 1:
@@ -374,8 +447,8 @@ if __name__ == "__main__":
                 from .golf_epaper import run_epaper
             else:
                 from golf_epaper import run_epaper
-            run_epaper(args.refresh_seconds or 300, args.driver_path, args.orientation)
+            run_epaper(args.refresh_seconds or 300, args.driver_path, args.orientation or "vertical")
         except (ImportError, RuntimeError) as exc:
             parser.error(str(exc))
     else:
-        run_gui("screen", args.size, args.refresh_seconds)
+        run_gui("screen", args.size, args.refresh_seconds, args.orientation)

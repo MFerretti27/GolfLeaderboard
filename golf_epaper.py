@@ -139,8 +139,9 @@ def draw_scoreboard(
     event: dict[str, Any] | None,
     updated_at: datetime,
     orientation: str = "vertical",
+    rotate_for_panel: bool = True,
 ) -> Any:
-    """Render a leaderboard for portrait or landscape physical panel mounting."""
+    """Render a leaderboard for portrait or landscape panel mounting."""
     from PIL import Image, ImageDraw, ImageFont
 
     if orientation not in ("vertical", "horizontal"):
@@ -153,7 +154,9 @@ def draw_scoreboard(
     tee_time_font = row_font
     text_color = WHITE
     line_color = WHITE
-    image_rotation = Image.Transpose.ROTATE_90 if is_vertical else Image.Transpose.ROTATE_180
+    image_rotation = (
+        Image.Transpose.ROTATE_90 if is_vertical else Image.Transpose.ROTATE_180
+    ) if rotate_for_panel else None
 
     if event is None:
         from PIL import ImageFont

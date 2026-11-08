@@ -74,6 +74,15 @@ python3 golf_live_gui.py --display eink
 
 E-ink mode uses the panel's hardware driver directly; it does not open a desktop GUI. The default refresh interval is five minutes. The regular screen mode continues to use FreeSimpleGUI and refreshes every 30 seconds.
 
+LCD orientation keeps the regular FreeSimpleGUI dashboard and adjusts it for portrait or landscape. Landscape shows all live hole columns; portrait shows the core live columns (Pos, Player, Tot, Today) so they remain readable. Without `--orientation`, the dashboard keeps its default landscape window:
+
+```bash
+python3 golf_live_gui.py --display screen --orientation vertical
+python3 golf_live_gui.py --display screen --orientation horizontal
+```
+
+LCD mode defaults to a 900x1400 portrait window or a 1400x900 landscape window. Use `--size WIDTHxHEIGHT` to override the window size.
+
 E-paper defaults to a vertical leaderboard (rotate the panel to portrait). To use the panel horizontally, select the landscape layout:
 
 ```bash

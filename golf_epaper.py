@@ -136,7 +136,7 @@ def draw_scoreboard(
     orientation: str = "vertical",
 ) -> Any:
     """Render a leaderboard for portrait or landscape physical panel mounting."""
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageFont
 
     if orientation not in ("vertical", "horizontal"):
         raise ValueError("orientation must be 'vertical' or 'horizontal'")
@@ -147,7 +147,7 @@ def draw_scoreboard(
     title_font, header_font, row_font = load_fonts()
     text_color = WHITE
     line_color = WHITE
-    image_rotation = Image.Transpose.ROTATE_90 if is_vertical else None
+    image_rotation = Image.Transpose.ROTATE_90 if is_vertical else Image.Transpose.ROTATE_180
 
     if event is None:
         from PIL import ImageFont
@@ -271,6 +271,13 @@ def draw_scoreboard(
         table_top = 154
         is_live = bool(metadata.get("is_live"))
         if is_live:
+            try:
+                hole_font = ImageFont.truetype(row_font.path, 12)
+            except (AttributeError, OSError):
+                try:
+                    hole_font = ImageFont.load_default(size=12)
+                except TypeError:
+                    hole_font = row_font
             positions = [12, 54, 222, 282]
             labels = ["Pos", "Player", "Tot", "Today"]
             column_widths = [38, 160, 56, 60]
@@ -293,7 +300,11 @@ def draw_scoreboard(
 
     draw.line((10, table_top + 25, table_right, table_top + 25), fill=line_color, width=2)
     for index, label in enumerate(labels):
-        draw.text((positions[index], table_top), label, font=header_font, fill=text_color)
+        if not is_vertical and metadata.get("is_live") and index >= 4:
+            center_x = positions[index] + column_widths[index] / 2
+            draw.text((center_x, table_top), label, font=hole_font, fill=text_color, anchor="mt")
+        else:
+            draw.text((positions[index], table_top), label, font=header_font, fill=text_color)
 
     if not rows:
         from PIL import ImageFont
@@ -342,9 +353,14 @@ def draw_scoreboard(
         visible_columns = len(positions)
         for column_index, value in enumerate(row[:visible_columns]):
             max_width = column_widths[column_index] - 4
-            font = header_font if column_index == 1 else row_font
+            is_hole_column = not is_vertical and metadata.get("is_live") and column_index >= 4
+            font = hole_font if is_hole_column else header_font if column_index == 1 else row_font
             text = shorten_text(draw, value, font, max_width)
-            draw.text((positions[column_index], y), text, font=font, fill=text_color)
+            if is_hole_column:
+                center_x = positions[column_index] + column_widths[column_index] / 2
+                draw.text((center_x, y), text, font=font, fill=text_color, anchor="mt")
+            else:
+                draw.text((positions[column_index], y), text, font=font, fill=text_color)
         draw.line((10, y + row_height - 4, table_right, y + row_height - 4), fill=line_color, width=1)
 
     draw.text((18, footer_y), f"Updated {updated_at:%I:%M %p}", font=row_font, fill=text_color)

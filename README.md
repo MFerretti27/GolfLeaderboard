@@ -195,12 +195,6 @@ Use `bash .github/setup_pi_zero_2w.sh --no-service` if you want the setup script
 
 </details>
 
-## GUI Controls
-
-- Right Arrow: next tournament
-- Left Arrow: previous tournament
-- Escape: quit
-
 ## Refresh Behavior
 
 - Screen refresh defaults to 30 seconds; e-paper refresh defaults to 300 seconds.

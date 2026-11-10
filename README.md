@@ -1,33 +1,50 @@
 # Golf Leaderboard
 
-A lightweight PGA leaderboard project with two entry points:
+A Python app that fetches PGA tournament scores from ESPN and displays a live leaderboard on a computer screen or a Waveshare PhotoPainter E6 e-paper panel.
 
-- `golf.py`: data + formatting layer (CLI-friendly)
-- `golf_live_gui.py`: selects FreeSimpleGUI for regular screens or a native Waveshare driver for the PhotoPainter e-paper display
-- `golf_epaper.py`: renders the leaderboard as an 800x480 image and sends it to the Waveshare E6 panel
+## Choose how to run it
 
-## Files
+| Where | Start here | What happens |
+| --- | --- | --- |
+| Desktop | `python3 main.py` | Sets up Python dependencies and opens the leaderboard window. |
+| Raspberry Pi Zero 2 W + PhotoPainter E6 | Follow [Raspberry Pi setup](#raspberry-pi-setup) | Installs the display driver and can start the leaderboard automatically at boot. |
 
-- `golf.py`
-  - Fetches scoreboard data from ESPN
-  - Builds structured leaderboard data for GUI rendering
-  - Supports final and live tournament formats
-  - Pulls course/location metadata from ESPN core event endpoint
-  - Uses local image lookup for tournament logos
+The main files are:
 
-- `golf_live_gui.py`
-  - Renders a professional-style leaderboard UI
-  - Rotates tournaments automatically every refresh interval
-  - Supports keyboard navigation
-  - Shows/hides tournament logo based on local image availability
-- `golf_epaper.py`
-  - Renders a compact leaderboard for the 7.3-inch PhotoPainter E6 panel
-  - Uses the `epd7in3e` driver from the official PhotoPainter demo
-  - Refreshes every five minutes by default
+- `main.py` - easiest way to launch the desktop app; creates a virtual environment and installs dependencies.
+- `golf_live_gui.py` - runs the leaderboard on a desktop screen or e-paper panel.
+- `golf.py` - prints leaderboard data in the terminal.
+- `golf_epaper.py` - draws the e-paper display; normally launched through `golf_live_gui.py`.
 
-## Requirements
+## Contents
 
-### Desktop / manual install
+- [Desktop setup](#manual-desktop-install)
+- [Run and choose a display](#run)
+- [Raspberry Pi e-paper setup](#raspberry-pi-setup)
+- [GUI controls](#gui-controls)
+- [Refresh behavior](#refresh-behavior)
+- [Tournament logos](#local-tournament-logos)
+- [Notes](#notes)
+
+## Quick start
+
+### Desktop
+
+From the project folder, run:
+
+```bash
+python3 main.py
+```
+
+This prepares the app and opens the regular desktop leaderboard. See [Desktop setup](#manual-desktop-install) for manual installation or [Run](#run) for display options.
+
+### Raspberry Pi
+
+Use the [Raspberry Pi setup](#raspberry-pi-setup) instructions to install the PhotoPainter driver and start the app. By default, setup installs a service that starts the leaderboard at boot. To launch it manually instead, use `python3 golf_live_gui.py --display eink`.
+
+## Install the app
+
+### Manual desktop install
 
 No `.env` file is required. The checked-in `.env.example` contains legacy settings that the current application does not read; changing those values will not configure the app.
 
@@ -49,7 +66,7 @@ python3 main.py
 
 To run `golf.py` or `golf_live_gui.py` directly, use the activated environment after installing requirements.
 
-### Raspberry Pi e-paper
+### Raspberry Pi setup
 
 For the Waveshare RPi Zero PhotoPainter E6, choose either a **manual launch** (you start the app yourself after boot) or **automatic startup** (systemd starts it at boot). Both require a Raspberry Pi Zero 2 W running Raspberry Pi OS, internet access during setup, and the PhotoPainter panel connected to the Pi. No `.env` file or Python virtual environment is needed on the Pi.
 
@@ -81,7 +98,7 @@ python3 golf_live_gui.py --display screen --orientation vertical
 python3 golf_live_gui.py --display screen --orientation horizontal
 ```
 
-LCD mode defaults to a 900x1400 portrait window or a 1400x900 landscape window. Use `--size WIDTHxHEIGHT` to override the window size.
+LCD mode detects the primary display resolution, fits the window to the available screen, scales text, and adjusts the visible row count. Use `--size WIDTHxHEIGHT` to override the detected window size.
 
 E-paper defaults to a vertical leaderboard (rotate the panel to portrait). To use the panel horizontally, select the landscape layout:
 
@@ -99,7 +116,8 @@ bash .github/deploy_pi_zero_2w.sh --ip 192.168.1.42 --user pi --orientation hori
 
 Use the driver/demo for the **RPi Zero PhotoPainter**, not a generic 7.3-inch Waveshare driver. The board has a different display power pin (BCM GPIO 27). Connect the panel according to the [Waveshare PhotoPainter guide](https://www.waveshare.com/wiki/RPi_Zero_PhotoPainter).
 
-### Option 1: Manual launch
+<details>
+<summary>Option 1: Manual launch (start it when you want)</summary>
 
 This option has you install the prerequisites yourself and start the app when wanted. It does **not** install a boot service. Run these commands on Raspberry Pi OS:
 
@@ -144,7 +162,10 @@ This option has you install the prerequisites yourself and start the app when wa
 
 The manual command runs in the foreground; stop it with Ctrl+C. Vertical is the default. Add `--orientation horizontal` for landscape, or `--refresh-seconds 600` for a ten-minute refresh interval.
 
-### Option 2: Automatic startup at boot
+</details>
+
+<details>
+<summary>Option 2: Automatic startup at boot (recommended)</summary>
 
 This option installs the same prerequisites and configures a systemd service to start the leaderboard automatically at boot. You can run setup directly on the Pi:
 
@@ -172,6 +193,8 @@ sudo journalctl -u golf-leaderboard-eink.service -f
 
 Use `bash .github/setup_pi_zero_2w.sh --no-service` if you want the setup script to prepare dependencies and SPI but do not want automatic startup.
 
+</details>
+
 ## GUI Controls
 
 - Right Arrow: next tournament
@@ -195,6 +218,9 @@ Put tournament logo files in the `images/` folder next to the scripts. The legac
 
 - `images/`
 
+<details>
+<summary>Logo filenames and supported formats</summary>
+
 The app will search for files using these base names (first match wins):
 
 - event id (example: `401811945.png`)
@@ -207,6 +233,8 @@ Supported extensions:
 - `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`
 
 If no matching event logo exists when a tournament has no players, `images/pga_logo.png` is used as a fallback. If neither logo is available, only the no-players message is shown.
+
+</details>
 
 ## Notes
 

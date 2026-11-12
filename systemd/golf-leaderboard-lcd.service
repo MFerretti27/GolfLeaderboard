@@ -1,0 +1,9 @@
+[Unit]
+Description=Golf leaderboard on LCD
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart="%h/.local/lib/golf-leaderboard/lcd-app"
+Restart=on-failure
+RestartSec=20

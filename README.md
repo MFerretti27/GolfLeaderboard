@@ -8,6 +8,7 @@ A Python app that fetches PGA tournament scores from ESPN and displays a live le
 | --- | --- | --- |
 | Desktop | `python3 main.py` | Sets up Python dependencies and opens the leaderboard window. |
 | Raspberry Pi Zero 2 W + PhotoPainter E6 | Follow [Raspberry Pi setup](#raspberry-pi-setup) | Installs the display driver and can start the leaderboard automatically at boot. |
+| Raspberry Pi + LCD | Follow [Pi LCD setup](#raspberry-pi-lcd-setup) | Installs desktop dependencies and configures startup at desktop login. |
 
 The main files are:
 
@@ -21,6 +22,7 @@ The main files are:
 - [Desktop setup](#manual-desktop-install)
 - [Run and choose a display](#run)
 - [Raspberry Pi e-paper setup](#raspberry-pi-setup)
+- [Raspberry Pi LCD setup](#raspberry-pi-lcd-setup)
 - [GUI controls](#gui-controls)
 - [Refresh behavior](#refresh-behavior)
 - [Tournament logos](#local-tournament-logos)
@@ -99,6 +101,11 @@ python3 golf_live_gui.py --display screen --orientation horizontal
 ```
 
 LCD mode detects the primary display resolution, fits the window to the available screen, scales text, and adjusts the visible row count. Use `--size WIDTHxHEIGHT` to override the detected window size.
+Visible leaderboard columns expand to fill the grid width. In portrait, the
+tournament title wraps on its own row below the logo instead of being clipped.
+
+On the LCD live leaderboard, Today includes holes completed, such as `-2 (17)` or
+`E (F)` for a finished round. Players who have not started still show their tee time when available.
 
 E-paper defaults to a vertical leaderboard (rotate the panel to portrait). To use the panel horizontally, select the landscape layout:
 
@@ -109,7 +116,7 @@ python3 golf_live_gui.py --display eink --orientation horizontal
 Use `--orientation vertical` to select portrait explicitly. Set the boot service's layout during remote deployment with `--orientation horizontal`; vertical remains the default:
 
 ```bash
-bash .github/deploy_pi_zero_2w.sh --ip 192.168.1.42 --user pi --orientation horizontal
+bash scripts/setup_pi_eink.sh --ip 192.168.1.42 --user pi --orientation horizontal
 ```
 
 ### PhotoPainter hardware
@@ -172,16 +179,19 @@ This option installs the same prerequisites and configures a systemd service to 
 ```bash
 git clone https://github.com/MFerretti27/GolfLeaderboard.git
 cd GolfLeaderboard
-bash .github/setup_pi_zero_2w.sh
+bash scripts/setup_pi_eink.sh
 ```
 
-Or launch setup remotely from a Mac/Linux computer with SSH and Git installed. Push the desired branch to GitHub first; the helper clones or fast-forward-updates that branch under `~/GolfLeaderboard` on the Pi, then runs the Pi setup script:
+The same setup script also deploys remotely from a Mac/Linux computer with SSH and Git installed. Push the desired branch to GitHub first; it clones or fast-forward-updates that branch under `~/GolfLeaderboard` on the Pi, then runs setup. Local uncommitted or unpushed changes are not transferred:
 
 ```bash
-bash .github/deploy_pi_zero_2w.sh --ip 192.168.1.42 --user pi
+bash scripts/setup_pi_eink.sh --ip 192.168.1.42 --user pi
 ```
 
 Replace the example IP and username with the Pi's values. SSH access and sudo permission are required; SSH may prompt for the Pi account password and setup may prompt for the sudo password. Add `--orientation horizontal` to configure the boot service for landscape (vertical is the default).
+
+`scripts/setup_pi_eink.sh` replaces the separate e-ink setup and deployment scripts.
+Both local and remote setup accept `--no-service`.
 
 The Pi setup script installs Raspberry Pi OS packages for Python, Pillow, requests, GPIO, SPI, curl, and unzip; enables SPI; downloads the official PhotoPainter demo driver if it is missing; adds the account to available `spi` and `gpio` groups; and installs/enables/starts `golf-leaderboard-eink.service`. The service runs independently of SSH, starts again after reboot, and restarts if the app exits unexpectedly. It refreshes every five minutes by default. If setup reports that `/dev/spidev0.0` is unavailable, reboot the Pi; SPI changes and group membership also take effect after logging out/in or rebooting.
 
@@ -191,22 +201,89 @@ Check automatic service logs on the Pi with:
 sudo journalctl -u golf-leaderboard-eink.service -f
 ```
 
-Use `bash .github/setup_pi_zero_2w.sh --no-service` if you want the setup script to prepare dependencies and SPI but do not want automatic startup.
+Automatic setup also installs `golf-wifi-watchdog.service` (requires active
+NetworkManager, as used by current Raspberry Pi OS). Every 30 seconds it checks
+whether any Wi-Fi device is connected. After five continuous minutes disconnected,
+it turns Wi-Fi off for five seconds, then back on so NetworkManager can reconnect
+to saved networks with autoconnect enabled. Failed status checks reset the timer;
+missing Wi-Fi hardware is logged without cycling the radio. Recovery retries after
+another five minutes if Wi-Fi stays disconnected. It does not cycle Wi-Fi for an
+ESPN outage or internet failure while still connected to the Wi-Fi network.
+The watchdog runs separately from the display app, and recovery briefly interrupts
+Wi-Fi/SSH. It uses a root-owned installed copy of the recovery script.
+
+After updating the checkout on the Pi, rerun setup to install this service
+(preserve your chosen layout with `--orientation horizontal` if needed).
+View recovery logs or disable recovery with:
+
+```bash
+sudo journalctl -u golf-wifi-watchdog.service -f
+sudo systemctl disable --now golf-wifi-watchdog.service
+```
+
+Use `bash scripts/setup_pi_eink.sh --no-service` if you want the setup script to prepare dependencies and SPI but do not want automatic startup.
 
 </details>
+
+## Raspberry Pi LCD setup
+
+Use Raspberry Pi OS **Desktop**, an attached LCD, and a desktop user account.
+Run setup as that user, not with `sudo`; it requests sudo for system changes.
+The LCD script supports the same local/remote options as e-paper setup:
+
+```bash
+# On the Pi
+bash scripts/setup_pi_lcd.sh
+
+# From a Mac/Linux checkout, after pushing the branch to GitHub
+bash scripts/setup_pi_lcd.sh --ip 192.168.1.42 --user pi
+```
+
+Setup installs Tk and Python packages, creates an isolated `.venv-lcd/`
+environment, and installs the shared Wi-Fi recovery service. It does not install
+PhotoPainter drivers or enable SPI. Horizontal layout is the default; add
+`--orientation vertical` for portrait. Configure physical display rotation in
+Raspberry Pi OS display settings; the option only changes the app layout.
+
+The app starts at the next desktop login via
+`~/.config/autostart/golf-leaderboard-lcd.desktop`, using the desktop's X11 or
+Wayland environment rather than trying to open a window from SSH. Enable
+**Desktop Autologin** with `sudo raspi-config` for unattended startup after boot.
+For an immediate launch in an existing desktop session, run
+`~/.local/bin/golf-leaderboard-lcd` from its desktop terminal.
+LCD logs are written to `~/.local/state/golf-leaderboard/lcd.log`.
+The desktop launcher imports the graphical session environment and starts
+`golf-leaderboard-lcd.service` as a user systemd service. Like e-paper, it
+restarts after a crash (20-second delay); closing the window or pressing Escape
+exits normally without restarting. Rerun LCD setup to install this behavior on
+an existing Pi. Stop it with `systemctl --user stop golf-leaderboard-lcd.service`.
+
+Use `--no-service` to install dependencies without creating autostart or enabling
+Wi-Fi recovery. This flag does not remove previously installed startup entries.
+To disable LCD autostart, remove its desktop entry from `~/.config/autostart/`.
 
 ## Refresh Behavior
 
 - Screen refresh defaults to 30 seconds; e-paper refresh defaults to 300 seconds.
 - Override either interval with `--refresh-seconds`.
-- E-paper checks for updates at the configured interval but only refreshes the panel when the rendered image changes. With multiple tournaments, automatic tournament rotation changes the image and therefore triggers a refresh.
+- When no tournaments are returned, both displays show the PGA logo (if available)
+  and "No tournaments found".
+- Both displays select a single tournament without rotation or tournament-switching
+  controls. Live events take precedence: if only the alternate-field event is live,
+  it is displayed even when a major/signature event is between rounds. When
+  several events are live, majors take priority over signature events, then other
+  events. When none are live, the same priority applies to all returned events.
+  Equal-priority events are selected by name, then ID, independently of API order.
+  Major/signature names are maintained explicitly in `golf.py` because ESPN's
+  scoreboard does not supply that classification.
+- E-paper checks for updates at the configured interval but only refreshes the panel when the rendered image changes.
 - Last update text shows:
   - time on success
   - error details on refresh failure
 
 ## Local Tournament Logos
 
-Tournament images are local-only (no ESPN image dependency). On e-paper, a matching tournament logo is shown only when that event has no player rows, above the “No players found yet” message. If there is no event at all, the PGA logo is used instead.
+Tournament images are local-only (no ESPN image dependency). Both LCD and e-paper keep tournament details visible when an event has no player rows and show the matching tournament logo above the “No players found yet” message, falling back to the PGA logo if no event logo is available. If there is no event at all, both displays show the PGA logo instead.
 
 Put tournament logo files in the `images/` folder next to the scripts. The legacy `tournament_images/` folder is also checked for compatibility:
 

@@ -9,6 +9,8 @@ readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 readonly DRIVER_DIR="${REPO_ROOT}/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib"
 readonly DRIVER_ZIP_URL="https://files.waveshare.com/wiki/RPi_Zero_PhotoPainter/Demo/RPi_Zero_PhotoPainter.zip"
 readonly SERVICE_NAME="golf-leaderboard-eink.service"
+# shellcheck source=pi_setup_common.sh
+source "${SCRIPT_DIR}/pi_setup_common.sh"
 INSTALL_SERVICE=1
 ORIENTATION="vertical"
 TMP_DIR=""
@@ -22,37 +24,27 @@ trap cleanup EXIT
 
 usage() {
     cat <<'EOF'
-Usage: bash .github/setup_pi_zero_2w.sh [--orientation vertical|horizontal] [--no-service]
+Usage: bash scripts/setup_pi_eink.sh [--ip ADDRESS --user USER] [--orientation vertical|horizontal] [--no-service]
 
 Installs the PhotoPainter-specific e-paper driver and Python system packages,
 enables SPI, and configures the leaderboard to start at boot. Run on the Pi
 from a checkout of this repository.
+With --ip, deploy the published Git branch over SSH and run setup on that Pi.
 
 Options:
+  --ip          Remote Pi address (omit for local setup on the Pi).
+  --user        SSH account (default: pi).
   --no-service   Install dependencies and enable SPI, but do not install or
                  start the systemd service.
-    --orientation  Set the boot service's display layout (default: vertical).
+  --orientation Set the boot service's display layout (default: vertical).
   -h, --help     Show this help.
 EOF
 }
 
-while (($#)); do
-    case "$1" in
-        --no-service) INSTALL_SERVICE=0 ;;
-        --orientation)
-            (($# >= 2)) || { echo "--orientation requires vertical or horizontal." >&2; exit 2; }
-            ORIENTATION="$2"
-            shift
-            ;;
-        -h|--help) usage; exit 0 ;;
-        *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
-    esac
-    shift
-done
-
-if [[ "$ORIENTATION" != "vertical" && "$ORIENTATION" != "horizontal" ]]; then
-    echo "Orientation must be 'vertical' or 'horizontal'." >&2
-    exit 2
+parse_pi_options "$@"
+if [[ -n "$PI_IP" ]]; then
+    deploy_to_pi setup_pi_eink.sh
+    exit 0
 fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
@@ -150,6 +142,7 @@ if [[ "${RUN_USER}" != "root" ]]; then
 fi
 
 if ((INSTALL_SERVICE)); then
+    install_wifi_watchdog
     RUN_GROUP="$(id -gn "$RUN_USER")"
     SERVICE_TMP="$(mktemp)"
     cat >"${SERVICE_TMP}" <<EOF

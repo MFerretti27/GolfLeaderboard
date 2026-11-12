@@ -19,6 +19,20 @@ WEATHER_CACHE = {}
 TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "images"
 LEGACY_TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "tournament_images"
 
+# ESPN's scoreboard does not identify signature events. Match name prefixes to
+# tolerate sponsor suffixes without relying on season-specific event IDs.
+MAJOR_EVENT_NAMES = (
+    "masters tournament", "the masters", "pga championship",
+    "u s open", "us open", "the open", "open championship",
+)
+SIGNATURE_EVENT_NAMES = (
+    "the sentry", "sentry tournament of champions", "at t pebble beach pro am",
+    "the genesis invitational", "genesis invitational", "arnold palmer invitational",
+    "rbc heritage", "truist championship", "wells fargo championship",
+    "cadillac championship", "the memorial tournament", "memorial tournament",
+    "travelers championship",
+)
+
 WEATHER_CODE_DESCRIPTIONS = {
     0: "Clear",
     1: "Mainly clear",
@@ -168,6 +182,34 @@ def get_preferred_events():
     events = data.get("events", [])
     live_events = [event for event in events if is_live_event(event)]
     return live_events if live_events else events
+
+
+def select_display_event(events):
+    """Choose one event: live first, then major/signature, with stable ties."""
+    live_events = [event for event in events if is_live_event(event)]
+    candidates = live_events or events
+    if not candidates:
+        return None
+
+    def priority(event):
+        names = [
+            re.sub(r"[^a-z0-9]+", " ", str(event.get(field, "")).lower()).strip()
+            for field in ("name", "shortName")
+        ]
+        def matches(prefixes):
+            return any(
+                name == prefix or name.startswith(prefix + " ")
+                for name in names for prefix in prefixes
+            )
+        if matches(MAJOR_EVENT_NAMES):
+            tier = 0
+        elif matches(SIGNATURE_EVENT_NAMES):
+            tier = 1
+        else:
+            tier = 2
+        return tier, names[0] or names[1], str(event.get("id", ""))
+
+    return min(candidates, key=priority)
 
 
 def safe_int(value, default=9999):

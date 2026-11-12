@@ -17,6 +17,7 @@ if __package__:
         get_scheduled_round_number,
         get_tournament_presentation_data,
         safe_int,
+        select_display_event,
     )
 else:
     from golf import (
@@ -26,6 +27,7 @@ else:
         get_scheduled_round_number,
         get_tournament_presentation_data,
         safe_int,
+        select_display_event,
     )
 
 DISPLAY_WIDTH = 800
@@ -422,7 +424,6 @@ def run_epaper(
     epd_module = load_driver(driver_path)
     epd = epd_module.EPD()
     initialized = False
-    current_index = -1
     last_display_buffer: Any = None
     last_displayed_at = datetime.now()
 
@@ -434,11 +435,7 @@ def run_epaper(
         while True:
             try:
                 events = get_preferred_events()
-                if events:
-                    current_index = (current_index + 1) % len(events)
-                    current_event = events[current_index]
-                else:
-                    current_event = None
+                current_event = select_display_event(events)
 
                 image = draw_scoreboard(current_event, last_displayed_at, orientation)
                 display_buffer = epd.getbuffer(image)

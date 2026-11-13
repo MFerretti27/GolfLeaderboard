@@ -22,7 +22,7 @@ class EventSelectionTests(unittest.TestCase):
 
     def test_overlapping_major_and_signature_events(self):
         for preferred_name, alternate_name in (
-            ("Arnold Palmer Invitational pres. by Mastercard", "Puerto Rico Open"),
+            ("Arnold Palmer Invitational presented by Mastercard", "Puerto Rico Open"),
             ("Truist Championship", "ONEflight Myrtle Beach Classic"),
             ("The Open", "Corales Puntacana Championship"),
             ("U.S. Open", "Alternate Tournament"),

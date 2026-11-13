@@ -13,6 +13,7 @@ set -Eeuo pipefail
 # Wayland HDMI/DSI display to portrait at startup, preserving existing portrait.
 # Add --no-service to skip desktop autostart and Wi-Fi recovery.
 # Enable Desktop Autologin for unattended startup; setup requests sudo as needed.
+# Setup restarts the app when a graphical session is available; no Pi reboot.
 # ==============================================================================
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,17 +56,23 @@ if [[ "$EUID" -eq 0 ]]; then
     exit 1
 fi
 SUDO=(sudo)
+log_banner "Golf Leaderboard Local Setup: Raspberry Pi + LCD/HDMI Display"
+printf 'Target User:     %s\nRepository Path: %s\nOrientation:     %s\n' "$USER" "$REPO_ROOT" "$ORIENTATION"
+log_step 1 5 "Installing required system packages"
 sudo -v
 sudo apt-get update
 sudo apt-get install -y python3 python3-venv python3-tk python3-pil python3-requests
 if [[ "$ORIENTATION" == vertical ]]; then
     sudo apt-get install -y wlr-randr
 fi
+log_step 2 5 "Setting up the Python virtual environment"
 /usr/bin/python3 -m venv --system-site-packages "${REPO_ROOT}/.venv-lcd"
 "${REPO_ROOT}/.venv-lcd/bin/python" -m pip install -r "${REPO_ROOT}/requirements.txt"
 
 if ((INSTALL_SERVICE)); then
+    log_step 3 5 "Configuring Wi-Fi recovery"
     install_wifi_watchdog
+    log_step 4 5 "Installing desktop autostart and the LCD service"
     mkdir -p "$HOME/.local/bin" "$HOME/.local/lib/golf-leaderboard" \
         "$HOME/.local/state/golf-leaderboard" "$HOME/.config/autostart" "$HOME/.config/systemd/user"
     launcher="$HOME/.local/bin/golf-leaderboard-lcd"
@@ -103,11 +110,17 @@ if ((INSTALL_SERVICE)); then
     escaped_launcher="${escaped_launcher//%/%%}"
     printf '[Desktop Entry]\nType=Application\nName=Golf Leaderboard LCD\nExec="%s"\nTerminal=false\n' \
         "$escaped_launcher" >"$HOME/.config/autostart/golf-leaderboard-lcd.desktop"
-    echo "LCD autostart configured. Log into the Pi desktop (or log out/in) to start it."
+    log_step 5 5 "Checking the desktop session and restarting the LCD app"
+    restart_lcd_after_setup "$launcher"
+    log_banner "LCD Setup Completed Successfully!"
     echo "The user systemd service restarts the LCD app 20 seconds after a crash."
     echo "For unattended boot, enable Desktop Autologin using sudo raspi-config."
     echo "Logs: $HOME/.local/state/golf-leaderboard/lcd.log"
 else
+    log_step 3 5 "Skipping Wi-Fi recovery (--no-service)"
+    log_step 4 5 "Skipping desktop autostart installation (--no-service)"
+    log_step 5 5 "Skipping app restart (--no-service)"
+    log_banner "LCD Dependencies Configured Successfully!"
     printf 'Dependencies ready. Launch from a desktop terminal:\n%q %q --display screen --orientation %q\n' \
         "${REPO_ROOT}/.venv-lcd/bin/python" "${REPO_ROOT}/golf_live_gui.py" "$ORIENTATION"
 fi

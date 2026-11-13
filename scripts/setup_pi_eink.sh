@@ -12,6 +12,7 @@ set -Eeuo pipefail
 # Portrait is the default; add --orientation horizontal for landscape.
 # Add --no-service to skip boot startup and Wi-Fi recovery.
 # SSH and sudo may prompt for passwords. Reboot if SPI setup requires it.
+# Setup restarts the app automatically when SPI is ready; no Pi reboot.
 # ==============================================================================
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -82,6 +83,9 @@ if [[ "${RUN_USER}" != "root" ]] && ! id "${RUN_USER}" >/dev/null 2>&1; then
     exit 1
 fi
 
+log_banner "Golf Leaderboard Local Setup: Raspberry Pi + PhotoPainter E-ink Display"
+printf 'Target User:     %s\nRepository Path: %s\nOrientation:     %s\n' "$RUN_USER" "$REPO_ROOT" "$ORIENTATION"
+
 if [[ "${EUID}" -ne 0 ]]; then
     sudo -v
 fi
@@ -91,6 +95,7 @@ if ! command -v apt-get >/dev/null 2>&1; then
     exit 1
 fi
 
+log_step 1 6 "Installing required system packages"
 "${SUDO[@]}" apt-get update
 "${SUDO[@]}" apt-get install -y \
     curl \
@@ -103,6 +108,7 @@ fi
 
 # Enable SPI using raspi-config when available; otherwise update the active
 # Raspberry Pi OS boot configuration file.
+log_step 2 6 "Enabling the SPI interface"
 if command -v raspi-config >/dev/null 2>&1; then
     "${SUDO[@]}" raspi-config nonint do_spi 0
 else
@@ -124,6 +130,7 @@ else
 fi
 
 # Fetch the board-specific demo only when its Python driver is not already present.
+log_step 3 6 "Checking the PhotoPainter display driver"
 if [[ ! -f "${DRIVER_DIR}/waveshare_epd/epd7in3e.py" ]]; then
     TMP_DIR="$(mktemp -d)"
     curl -fL --retry 3 "$DRIVER_ZIP_URL" -o "${TMP_DIR}/photo-painter-demo.zip"
@@ -141,6 +148,7 @@ if [[ "${RUN_USER}" != "root" && "${EUID}" -eq 0 ]]; then
     chown -R "${RUN_USER}:${RUN_GROUP}" "${REPO_ROOT}/RPi_Zero_PhotoPainter"
 fi
 
+log_step 4 6 "Configuring SPI/GPIO permissions"
 if [[ "${RUN_USER}" != "root" ]]; then
     for group in spi gpio; do
         if getent group "$group" >/dev/null 2>&1; then
@@ -152,6 +160,7 @@ if [[ "${RUN_USER}" != "root" ]]; then
 fi
 
 if ((INSTALL_SERVICE)); then
+    log_step 5 6 "Installing Wi-Fi recovery and the e-paper service"
     install_wifi_watchdog
     RUN_GROUP="$(id -gn "$RUN_USER")"
     SERVICE_TMP="$(mktemp)"
@@ -178,13 +187,19 @@ EOF
     "${SUDO[@]}" systemctl daemon-reload
     "${SUDO[@]}" systemctl enable "$SERVICE_NAME"
 
+    log_step 6 6 "Checking SPI readiness and restarting the e-paper app"
     if [[ -e /dev/spidev0.0 ]]; then
-        "${SUDO[@]}" systemctl restart "$SERVICE_NAME" || "${SUDO[@]}" systemctl start "$SERVICE_NAME"
-        echo "The e-paper service is enabled and started. Check logs with: sudo journalctl -u ${SERVICE_NAME} -f"
+        "${SUDO[@]}" systemctl restart "$SERVICE_NAME"
+        "${SUDO[@]}" systemctl is-active --quiet "$SERVICE_NAME"
     else
         echo "SPI is enabled in the boot configuration, but /dev/spidev0.0 is not available yet. Reboot the Pi; the service will start automatically afterward."
     fi
+    log_banner "E-paper Setup Completed Successfully!"
+    echo "Service enabled. Check logs with: sudo journalctl -u ${SERVICE_NAME} -f"
 else
+    log_step 5 6 "Skipping service installation (--no-service)"
+    log_step 6 6 "Skipping app restart (--no-service)"
+    log_banner "E-paper Dependencies Configured Successfully!"
     echo "SPI and application dependencies are configured. Run the app with: python3 ${REPO_ROOT}/golf_live_gui.py --display eink --orientation ${ORIENTATION}"
 fi
 

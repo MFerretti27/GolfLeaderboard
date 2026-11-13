@@ -256,13 +256,17 @@ so no output name needs to be hardcoded. Connect only one enabled display.
 Horizontal mode leaves desktop rotation unchanged. On X11, or with `--no-service`,
 configure rotation in Raspberry Pi OS display settings instead.
 
-The app starts at the next desktop login via
+Setup automatically restarts the LCD app when a desktop session is available,
+including during SSH deployment using the user service's saved graphical
+environment. Otherwise, it starts at the next desktop login via
 `~/.config/autostart/golf-leaderboard-lcd.desktop`, using the desktop's X11 or
 Wayland environment rather than trying to open a window from SSH. Enable
 **Desktop Autologin** with `sudo raspi-config` for unattended startup after boot.
-For an immediate launch in an existing desktop session, run
+For a manual restart in an existing desktop session, run
 `~/.local/bin/golf-leaderboard-lcd` from its desktop terminal.
 LCD logs are written to `~/.local/state/golf-leaderboard/lcd.log`.
+E-paper setup also restarts its service automatically when SPI is ready.
+Neither setup reboots the Pi; first-time SPI changes may still require a reboot.
 The desktop launcher imports the graphical session environment and starts
 `golf-leaderboard-lcd.service` as a user systemd service. Like e-paper, it
 restarts after a crash (20-second delay); closing the window or pressing Escape

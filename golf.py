@@ -1,8 +1,10 @@
-import requests
+import re
 from datetime import datetime, timezone
 from pathlib import Path
-import re
 from time import monotonic
+from typing import Any
+
+import requests
 
 SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
 CORE_EVENT_URL = "https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/{event_id}"
@@ -13,11 +15,25 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 # Round stat indices from ESPN's statistics categories
 # Order: birdies, eagles, double_bogeys, bogeys, other, pars
 ROUND_STAT_NAMES = ["Birdies", "Eagles", "Dbl Bogeys", "Bogeys", "Other", "Pars"]
-EVENT_DETAILS_CACHE = {}
-PLAYER_TEE_TIME_CACHE = {}
-WEATHER_CACHE = {}
+EVENT_DETAILS_CACHE: dict[str, dict[str, Any]] = {}
+PLAYER_TEE_TIME_CACHE: dict[tuple[str, str, str, int], tuple[float, str]] = {}
+WEATHER_CACHE: dict[str, str] = {}
 TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "images"
 LEGACY_TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "tournament_images"
+
+# ESPN's scoreboard does not identify signature events. Match name prefixes to
+# tolerate sponsor suffixes without relying on season-specific event IDs.
+MAJOR_EVENT_NAMES = (
+    "masters tournament", "the masters", "pga championship",
+    "u s open", "us open", "the open", "open championship",
+)
+SIGNATURE_EVENT_NAMES = (
+    "the sentry", "sentry tournament of champions", "at t pebble beach pro am",
+    "the genesis invitational", "genesis invitational", "arnold palmer invitational",
+    "rbc heritage", "truist championship", "wells fargo championship",
+    "cadillac championship", "the memorial tournament", "memorial tournament",
+    "travelers championship",
+)
 
 WEATHER_CODE_DESCRIPTIONS = {
     0: "Clear",
@@ -168,6 +184,34 @@ def get_preferred_events():
     events = data.get("events", [])
     live_events = [event for event in events if is_live_event(event)]
     return live_events if live_events else events
+
+
+def select_display_event(events):
+    """Choose one event: live first, then major/signature, with stable ties."""
+    live_events = [event for event in events if is_live_event(event)]
+    candidates = live_events or events
+    if not candidates:
+        return None
+
+    def priority(event):
+        names = [
+            re.sub(r"[^a-z0-9]+", " ", str(event.get(field, "")).lower()).strip()
+            for field in ("name", "shortName")
+        ]
+        def matches(prefixes):
+            return any(
+                name == prefix or name.startswith(prefix + " ")
+                for name in names for prefix in prefixes
+            )
+        if matches(MAJOR_EVENT_NAMES):
+            tier = 0
+        elif matches(SIGNATURE_EVENT_NAMES):
+            tier = 1
+        else:
+            tier = 2
+        return tier, names[0] or names[1], str(event.get("id", ""))
+
+    return min(candidates, key=priority)
 
 
 def safe_int(value, default=9999):
@@ -403,9 +447,10 @@ def get_player_tee_off_time(event, competition, competitor):
         if not raw_tee_time:
             break
         try:
-            parsed_time = datetime.fromisoformat(str(raw_tee_time).replace("Z", "+00:00"))
+            # Python 3.10 needs an explicit offset rather than the ISO "Z" suffix.
+            parsed_time = datetime.fromisoformat(str(raw_tee_time).replace("Z", "+00:00"))  # noqa: FURB162
             if parsed_time.tzinfo is None:
-                parsed_time = parsed_time.replace(tzinfo=timezone.utc)
+                parsed_time = parsed_time.replace(tzinfo=timezone.utc)  # noqa: UP017 - Python 3.10 compatibility
             tee_time = parsed_time.astimezone().strftime("%I:%M %p").lstrip("0")
         except ValueError:
             tee_time = ""
@@ -593,7 +638,7 @@ def build_tournament_text(event, top_n=None):
     competition = event.get("competitions", [{}])[0]
     status_desc, status_detail = get_status_text(event, competition)
     broadcast = competition.get("broadcast", "")
-    course_name, location_text, weather_text, _ = get_event_metadata(event)
+    course_name, location_text, _weather_text, _ = get_event_metadata(event)
 
     competitors = sorted(
         competition.get("competitors", []),
@@ -640,7 +685,7 @@ def build_tournament_text(event, top_n=None):
         )
 
         lines.append(
-            f"  {position_display:>8}  {str(player_name):<22}  {country:<4}  {total_score:>4}{round_scores}"
+            f"  {position_display:>8}  {player_name!s:<22}  {country:<4}  {total_score:>4}{round_scores}"
         )
 
     return "\n".join(lines)
@@ -716,7 +761,7 @@ def build_live_tournament_text(event, top_n=None):
                 hole_values[idx] = get_hole_display_value(hole)
 
         lines.append(
-            f"  {position_display:>4}  {str(player_name):<20}  {total_score:>4}  {today_score:>5}{''.join(f' {value:>2}' for value in hole_values)}"
+            f"  {position_display:>4}  {player_name!s:<20}  {total_score:>4}  {today_score:>5}{''.join(f' {value:>2}' for value in hole_values)}"
         )
 
     return "\n".join(lines)

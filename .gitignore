@@ -6,6 +6,7 @@ __pycache__/
 # Virtual environments
 venv/
 .venv/
+.venv-lcd/
 env/
 ENV/
 
@@ -45,4 +46,3 @@ htmlcov/
 # Editor / IDE
 .vscode/
 .idea/
-

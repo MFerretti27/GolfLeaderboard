@@ -1,15 +1,33 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-if __package__:
-    from .golf import get_player_tee_off_time, get_preferred_events, get_tournament_presentation_data, safe_int
+if __package__ and not TYPE_CHECKING:
+    from .golf import (
+        get_player_tee_off_time,
+        get_preferred_events,
+        get_round_hole_progress,
+        get_scheduled_round_number,
+        get_tournament_presentation_data,
+        safe_int,
+        select_display_event,
+    )
 else:
-    from golf import get_player_tee_off_time, get_preferred_events, get_tournament_presentation_data, safe_int
+    from golf import (
+        get_player_tee_off_time,
+        get_preferred_events,
+        get_round_hole_progress,
+        get_scheduled_round_number,
+        get_tournament_presentation_data,
+        safe_int,
+        select_display_event,
+    )
 
 WINDOW_SIZE = (1400, 900)
 AUTO_REFRESH_MS = 30000
@@ -17,12 +35,16 @@ TOP_N_DISPLAY: int | None = 25
 MAX_GRID_COLUMNS = 22
 MAX_GRID_ROWS = 25
 SCREEN_ORIENTATION: str | None = None
-LOGO_CACHE: dict[str, bytes] = {}
+GRID_WIDTH_SCALE = 1.0
+GRID_CHARACTER_WIDTH_PIXELS = 0.0
+PLAYER_NAME_COLUMN_WIDTH = 18
+LOGO_CACHE: dict[tuple[str, tuple[int, int] | None], bytes] = {}
 THEME = "DarkGreen5"
 WINDOW_TITLE = "Golf Live Tournaments"
 DEFAULT_TITLE = "Golf Leaderboard"
 TITLE_TEXT = "Golf Leaderboard"
 TIME_FORMAT = "%I:%M %p"
+BASE_SCREEN_SIZE = (1400, 900)
 
 FONT_FAMILY = "Helvetica"
 FONT_GRID_SIZE = 16
@@ -59,6 +81,7 @@ def configure_display(
 ) -> None:
     """Apply screen dimensions and visual settings for the dashboard."""
     global WINDOW_SIZE, AUTO_REFRESH_MS, TOP_N_DISPLAY, MAX_GRID_COLUMNS, MAX_GRID_ROWS, SCREEN_ORIENTATION
+    global GRID_WIDTH_SCALE, GRID_CHARACTER_WIDTH_PIXELS, PLAYER_NAME_COLUMN_WIDTH
     global THEME, FONT_GRID_SIZE, FONT_META_SIZE, FONT_INFO_SIZE, FONT_TITLE_SIZE
     global FONT_GRID_HEADER, FONT_GRID_CELL, FONT_TITLE, FONT_META, FONT_INFO, FONT_INFO_BOLD
     global FONT_LAST_UPDATE, ROW_BG_EVEN, ROW_BG_ODD, ROW_BG_HEADER
@@ -70,6 +93,7 @@ def configure_display(
         TOP_N_DISPLAY = 12
         MAX_GRID_COLUMNS = 22
         MAX_GRID_ROWS = 12
+        GRID_WIDTH_SCALE = 1.0
         THEME = "LightGrey1"
         FONT_GRID_SIZE, FONT_META_SIZE, FONT_INFO_SIZE, FONT_TITLE_SIZE = 14, 14, 14, 24
         ROW_BG_EVEN = ROW_BG_HEADER = "#ffffff"
@@ -77,14 +101,24 @@ def configure_display(
         TEXT_COLOR_PRIMARY = TEXT_COLOR_GRID = "#000000"
     else:
         SCREEN_ORIENTATION = orientation
-        default_size = (900, 1400) if orientation == "vertical" else (1400, 900)
-        WINDOW_SIZE = size or default_size
+        GRID_CHARACTER_WIDTH_PIXELS = 0.0
+        PLAYER_NAME_COLUMN_WIDTH = 18
+        screen_width, screen_height = size or get_screen_window_size()
+        WINDOW_SIZE = (screen_width, screen_height)
+        GRID_WIDTH_SCALE = max(0.55, min(1.0, screen_width / 1200))
         AUTO_REFRESH_MS = (refresh_seconds if refresh_seconds is not None else 30) * 1000
-        TOP_N_DISPLAY = 25
         MAX_GRID_COLUMNS = 7 if orientation == "vertical" else 22
-        MAX_GRID_ROWS = 25
+        reference_size = (600, 1024) if orientation == "vertical" else BASE_SCREEN_SIZE
+        scale = max(0.65, min(1.3, min(screen_width / reference_size[0], screen_height / reference_size[1])))
+        FONT_GRID_SIZE = max(10, round(16 * scale))
+        FONT_META_SIZE = max(10, round(16 * scale))
+        FONT_INFO_SIZE = max(9, round(14 * scale))
+        FONT_TITLE_SIZE = max(18, round(30 * scale))
+        # Allocate enough cells for the screen; measured geometry determines
+        # how many complete rows are actually shown after layout.
+        MAX_GRID_ROWS = max(25, screen_height // (FONT_GRID_SIZE + 2))
+        TOP_N_DISPLAY = MAX_GRID_ROWS
         THEME = "DarkGreen5"
-        FONT_GRID_SIZE, FONT_META_SIZE, FONT_INFO_SIZE, FONT_TITLE_SIZE = 16, 16, 14, 30
         ROW_BG_EVEN = "#f5f5f5"
         ROW_BG_ODD = "#ebebeb"
         ROW_BG_HEADER = ROW_BG_EVEN
@@ -100,6 +134,22 @@ def configure_display(
     FONT_LAST_UPDATE = (FONT_FAMILY, FONT_META_SIZE)
 
 
+def get_screen_window_size() -> tuple[int, int]:
+    """Detect the primary display size and reserve space for desktop chrome."""
+    import tkinter as tk
+
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        root.destroy()
+        return max(320, screen_width), max(240, screen_height)
+    except tk.TclError:
+        logging.getLogger(__name__).exception("Could not detect the display size; using the default dimensions")
+        return BASE_SCREEN_SIZE
+
+
 def parse_window_size(value: str) -> tuple[int, int]:
     """Parse a WIDTHxHEIGHT window size supplied on the command line."""
     try:
@@ -112,12 +162,13 @@ def parse_window_size(value: str) -> tuple[int, int]:
     return width, height
 
 
-def fetch_logo_bytes(logo_path: str) -> bytes | None:
+def fetch_logo_bytes(logo_path: str, max_size: tuple[int, int] | None = None) -> bytes | None:
     """Load and cache logo image bytes from a local file path."""
     if not logo_path:
         return None
-    if logo_path in LOGO_CACHE:
-        return LOGO_CACHE[logo_path]
+    cache_key = (logo_path, max_size)
+    if cache_key in LOGO_CACHE:
+        return LOGO_CACHE[cache_key]
 
     path_obj = Path(logo_path)
     if not path_obj.exists() or not path_obj.is_file():
@@ -125,31 +176,61 @@ def fetch_logo_bytes(logo_path: str) -> bytes | None:
 
     try:
         content = path_obj.read_bytes()
-        LOGO_CACHE[logo_path] = content
+        if max_size is not None:
+            from PIL import Image
+
+            with Image.open(BytesIO(content)) as source:
+                image = source.convert("RGBA")
+            bounds = image.getchannel("A").getbbox()
+            if bounds:
+                image = image.crop(bounds)
+            image.thumbnail(max_size, Image.Resampling.LANCZOS)
+            output = BytesIO()
+            image.save(output, format="PNG")
+            content = output.getvalue()
+        LOGO_CACHE[cache_key] = content
         return content
     except OSError:
         return None
 
 
+def update_empty_leaderboard(
+    window: Any, visible: bool, logo_path: str = "", message: str = "No players found yet"
+) -> None:
+    """Show an empty-state message and local logo without replacing event details."""
+    logo_bytes = None
+    if visible:
+        fallback_path = str(Path(__file__).resolve().parent / "images" / "pga_logo.png")
+        for candidate in (logo_path, fallback_path):
+            logo_bytes = fetch_logo_bytes(candidate, (180, 130))
+            if logo_bytes:
+                break
+    window["EMPTY_LEADERBOARD_LOGO"].update(data=logo_bytes, visible=bool(logo_bytes))
+    window["EMPTY_LEADERBOARD_MESSAGE"].update(message, visible=visible)
+
+
 def get_column_width(column_index: int) -> int:
     """Return a fixed character width for each leaderboard column."""
-    if SCREEN_ORIENTATION == "vertical":
-        if column_index == 0:
-            return 5
-        if column_index == 1:
-            return 24
-        if column_index == 2:
-            return 6
-        if column_index == 3:
-            return 8
-        return 6
-    if column_index == 0:
-        return 5
     if column_index == 1:
-        return 18
-    if column_index == 3:
-        return 10
-    if column_index == 2:
+        return PLAYER_NAME_COLUMN_WIDTH
+
+    return get_base_column_width(column_index)
+
+
+def get_base_column_width(column_index: int) -> int:
+    """Return the default character width before expanding the player column."""
+    base_widths: tuple[int, ...]
+    minimum_widths: tuple[int, ...]
+    if SCREEN_ORIENTATION == "vertical":
+        base_widths = (5, 24, 6, 10, 6, 6, 6)
+        minimum_widths = (3, 8, 5, 10, 3, 3, 3)
+    else:
+        base_widths = (5, 18, 6, 10) + (4,) * 18
+        minimum_widths = (4, 8, 5, 10) + (2,) * 18
+    if column_index < len(base_widths):
+        return max(minimum_widths[column_index], round(base_widths[column_index] * GRID_WIDTH_SCALE))
+
+    if SCREEN_ORIENTATION == "vertical":
         return 6
     return 4
 
@@ -164,6 +245,105 @@ def fit_grid_value(value: Any, column_index: int) -> str:
     if len(text) <= max_characters:
         return text
     return f"{text[:max_characters - 3].rstrip()}..."
+
+
+def get_visible_column_count(headers: list[str], screen_width: int) -> int:
+    """Return the number of grid columns that fit within the LCD width."""
+    available_width = max(0, screen_width - 80)
+    character_width = GRID_CHARACTER_WIDTH_PIXELS or FONT_GRID_SIZE * 0.62
+    used_width = 0.0
+    visible_count = 0
+    for column_index, _ in enumerate(headers[:MAX_GRID_COLUMNS]):
+        column_width = get_base_column_width(column_index) * character_width + 4
+        if visible_count and used_width + column_width > available_width:
+            break
+        used_width += column_width
+        visible_count += 1
+    return max(1, visible_count)
+
+
+def get_player_name_column_width(visible_column_count: int, screen_width: int) -> int:
+    """Use the width left by the other visible columns for player names."""
+    available_width = max(0, screen_width - 80)
+    character_width = GRID_CHARACTER_WIDTH_PIXELS or FONT_GRID_SIZE * 0.62
+    fixed_width = sum(
+        get_base_column_width(column_index) * character_width + 4
+        for column_index in range(visible_column_count)
+        if column_index != 1
+    )
+    remaining_width = available_width - fixed_width - 4
+    return max(8, int(remaining_width / character_width))
+
+
+def get_grid_viewport_bottom(window: Any) -> int:
+    """Return the usable bottom edge shared by the grid and its ancestors."""
+    viewport = window["LEADERBOARD_GRID"].Widget
+    bottom = window.TKroot.winfo_rooty() + window.TKroot.winfo_height()
+    ancestor = viewport
+    while ancestor is not None:
+        border = ancestor.winfo_pixels(ancestor.cget("borderwidth"))
+        highlight = ancestor.winfo_pixels(ancestor.cget("highlightthickness"))
+        bottom = min(
+            bottom,
+            ancestor.winfo_rooty() + ancestor.winfo_height() - border - highlight,
+        )
+        # FreeSimpleGUI's hidden Tk parent is not part of this window's viewport.
+        if ancestor == window.TKroot:
+            break
+        ancestor = ancestor.master
+    return bottom
+
+
+def get_grid_row_capacity(window: Any, column_count: int) -> int:
+    """Budget uniform rows before mapping them, avoiding refresh-time flashes."""
+    if column_count == 0:
+        return 0
+    window.TKroot.update_idletasks()
+    header = window["HEADER_0"].Widget.master
+    row_height = max(
+        window[f"CELL_0_{column}"].Widget.winfo_reqheight()
+        + 4
+        + 2 * PAD_CELL[1]
+        for column in range(column_count)
+    )
+    top = header.winfo_rooty() + header.winfo_height()
+    return max(0, (get_grid_viewport_bottom(window) - top) // row_height)
+
+
+def fit_visible_grid_rows(window: Any, column_count: int, row_count: int) -> int:
+    """Hide rows whose rendered cells extend outside the leaderboard viewport."""
+    window.TKroot.update_idletasks()
+    bottom = get_grid_viewport_bottom(window)
+
+    visible_rows = 0
+    for row_index in range(row_count):
+        cells = [window[f"CELL_{row_index}_{column_index}"] for column_index in range(column_count)]
+        if not cells or any(not cell.Widget.winfo_ismapped() for cell in cells):
+            break
+        row_bottom = max(
+            (
+                cell.Widget.winfo_rooty()
+                + max(
+                    cell.Widget.winfo_height(),
+                    cell.Widget.winfo_reqheight() + 2 * int(cell.Widget.pack_info().get("ipady", 0)),
+                )
+                + PAD_CELL[1]
+                for cell in cells
+            ),
+            default=bottom + 1,
+        )
+        if row_bottom > bottom:
+            break
+        visible_rows += 1
+
+    for row_index in range(visible_rows, row_count):
+        for column_index in range(column_count):
+            window[f"CELL_{row_index}_{column_index}"].update(visible=False)
+    window.TKroot.update_idletasks()
+    if 0 < visible_rows < row_count:
+        # Hiding rows can change the allocated frame height; verify the new bounds.
+        return fit_visible_grid_rows(window, column_count, visible_rows)
+    return visible_rows
 
 
 def build_grid_layout() -> list[list[Any]]:
@@ -182,6 +362,8 @@ def build_grid_layout() -> list[list[Any]]:
                 pad=PAD_CELL,
                 relief=Sg.RELIEF_SOLID,
                 background_color=ROW_BG_HEADER,
+                expand_x=column_index == 1,
+                expand_y=True,
             )
         )
 
@@ -201,6 +383,8 @@ def build_grid_layout() -> list[list[Any]]:
                     pad=PAD_CELL,
                     relief=Sg.RELIEF_SOLID,
                     background_color=ROW_BG_EVEN if row_index % 2 == 0 else ROW_BG_ODD,
+                    expand_x=column_index == 1,
+                    expand_y=True,
                 )
             )
         rows.append(row)
@@ -211,13 +395,25 @@ def build_main_layout() -> list[list[Any]]:
     """Create the LCD leaderboard layout."""
     Sg.theme(THEME)
 
-    return [
-        [
-            Sg.Image(key="TOURNAMENT_LOGO", visible=False, pad=PAD_LOGO),
-            Sg.Push(),
-            Sg.Text(TITLE_TEXT, font=FONT_TITLE, text_color=TEXT_COLOR_PRIMARY, key="TITLE"),
-            Sg.Push(),
-        ],
+    if SCREEN_ORIENTATION == "vertical":
+        title_rows = [
+            [Sg.Push(), Sg.Image(key="TOURNAMENT_LOGO", visible=False, pad=PAD_LOGO), Sg.Push()],
+            [Sg.Text(
+                TITLE_TEXT, font=FONT_TITLE, text_color=TEXT_COLOR_PRIMARY,
+                key="TITLE", size=(1, None), expand_x=True, justification="center",
+            )],
+        ]
+    else:
+        title_rows = [
+            [
+                Sg.Image(key="TOURNAMENT_LOGO", visible=False, pad=PAD_LOGO),
+                Sg.Push(),
+                Sg.Text(TITLE_TEXT, font=FONT_TITLE, text_color=TEXT_COLOR_PRIMARY, key="TITLE"),
+                Sg.Push(),
+            ],
+        ]
+
+    return title_rows + [
         [
             Sg.Text("", key="DATE_RANGE", font=FONT_META, text_color=TEXT_COLOR_PRIMARY),
             Sg.Push(),
@@ -239,17 +435,66 @@ def build_main_layout() -> list[list[Any]]:
                 pad=PAD_TOURNAMENT_INFO,
             )
         ],
-        [Sg.Frame("Leaderboard", build_grid_layout(), expand_x=True, expand_y=True, pad=PAD_LEADERBOARD)],
+        [
+            Sg.Frame(
+                "Leaderboard",
+                [
+                    [Sg.Push(), Sg.Image(key="EMPTY_LEADERBOARD_LOGO", visible=False), Sg.Push()],
+                    [
+                        Sg.Text(
+                            "No players found yet",
+                            key="EMPTY_LEADERBOARD_MESSAGE",
+                            font=FONT_INFO_BOLD,
+                            text_color=TEXT_COLOR_PRIMARY,
+                            justification="center",
+                            expand_x=True,
+                            visible=False,
+                        )
+                    ],
+                    [Sg.Column(build_grid_layout(), key="LEADERBOARD_GRID", expand_x=True, expand_y=True, pad=(0, 0))],
+                ],
+                expand_x=True,
+                expand_y=True,
+                pad=PAD_LEADERBOARD,
+            )
+        ],
     ]
 
 
-def get_next_event_index(events: list[dict[str, Any]], current_index: int | None) -> int:
-    """Return the next event index, wrapping around for slideshow behavior."""
-    if not events:
-        return 0
-    if current_index is None:
-        return 0
-    return (current_index + 1) % len(events)
+def fit_lcd_content_width(window: Any, column_count: int) -> None:
+    """Wrap the portrait title and let visible grid cells fill their row."""
+    window.TKroot.update_idletasks()
+    if SCREEN_ORIENTATION == "vertical":
+        title = window["TITLE"].Widget
+        title.configure(wraplength=max(1, title.winfo_width() - 12), height=0)
+
+    for row_index in range(-1, MAX_GRID_ROWS):
+        prefix = "HEADER" if row_index == -1 else f"CELL_{row_index}"
+        for column_index in range(column_count):
+            element = window[f"{prefix}_{column_index}"]
+            # expand() packs the widget again, so never call it on hidden cells.
+            if element.Widget.winfo_manager() != "pack":
+                continue
+            # Balance the font's descent space with a small inset above the text.
+            element.Widget.configure(anchor="sw" if column_index == 1 else "s", pady=0)
+            element.expand(expand_x=True, expand_row=False)
+            element.Widget.pack_configure(ipady=2)
+    window.TKroot.update_idletasks()
+
+
+def add_hole_progress_to_live_rows(event: dict[str, Any], rows: list[list[str]]) -> None:
+    """Append current-round holes completed to LCD Today scores."""
+    competition = event.get("competitions", [{}])[0]
+    round_number = get_scheduled_round_number(competition)
+    competitors = sorted(
+        competition.get("competitors", []),
+        key=lambda competitor: safe_int(competitor.get("order")),
+    )
+    for row, competitor in zip(rows, competitors):
+        if len(row) > 3 and row[3] not in ("", "-"):
+            progress = get_round_hole_progress(competitor, round_number)
+            if progress != "-":
+                row[3] = f"{row[3]} ({progress})"
 
 
 def add_tee_times_to_live_rows(event: dict[str, Any], rows: list[list[str]]) -> None:
@@ -297,10 +542,8 @@ def run_gui(
     try:
         live_events = get_preferred_events()
     except Exception as exc:
-        Sg.popup_error(f"Could not fetch live tournaments.\n\n{exc}")
-        return
-
-    current_index: int | None = None
+        logging.getLogger(__name__).exception("Could not fetch tournaments at startup")
+        raise RuntimeError(f"Could not fetch tournaments at startup: {exc}") from exc
 
     window = Sg.Window(
         WINDOW_TITLE,
@@ -310,14 +553,43 @@ def run_gui(
         return_keyboard_events=True,
         finalize=True,
     )
+    if display == "screen" and size is None:
+        window.TKroot.attributes("-fullscreen", True)
+    import tkinter.font as tkfont
 
-    def update_grid(headers: list[str], rows: list[list[str]]) -> None:
-        active_column_count = min(len(headers), MAX_GRID_COLUMNS)
+    global GRID_CHARACTER_WIDTH_PIXELS
+    GRID_CHARACTER_WIDTH_PIXELS = float(
+        tkfont.Font(root=window.TKroot, font=FONT_GRID_CELL).measure("0")
+    )
+    fit_lcd_content_width(window, MAX_GRID_COLUMNS)
+    displayed_headers: list[str] = []
+    displayed_rows: list[list[str]] = []
+    displayed_column_limit = MAX_GRID_COLUMNS
+
+    def update_grid(headers: list[str], rows: list[list[str]]) -> int:
+        global PLAYER_NAME_COLUMN_WIDTH
+        nonlocal displayed_headers, displayed_rows
+        displayed_headers, displayed_rows = headers, rows
+        window.TKroot.update_idletasks()
+        current_width = window.TKroot.winfo_width()
+        active_column_count = min(
+            len(headers), displayed_column_limit, get_visible_column_count(headers, current_width)
+        )
+        if active_column_count > 1:
+            PLAYER_NAME_COLUMN_WIDTH = get_player_name_column_width(active_column_count, current_width)
+        else:
+            PLAYER_NAME_COLUMN_WIDTH = get_base_column_width(1)
+        window["HEADER_1"].set_size((PLAYER_NAME_COLUMN_WIDTH, 1))
+        for row_index in range(MAX_GRID_ROWS):
+            window[f"CELL_{row_index}_1"].set_size((PLAYER_NAME_COLUMN_WIDTH, 1))
+
         padded_headers = headers[:MAX_GRID_COLUMNS] + [""] * (MAX_GRID_COLUMNS - len(headers))
         for column_index, header in enumerate(padded_headers):
             is_visible = column_index < active_column_count
             window[f"HEADER_{column_index}"].update(header if is_visible else "", visible=is_visible)
 
+        fit_lcd_content_width(window, active_column_count)
+        row_capacity = get_grid_row_capacity(window, active_column_count)
         for row_index in range(MAX_GRID_ROWS):
             row_values = rows[row_index] if row_index < len(rows) else []
             padded_row = [
@@ -325,15 +597,22 @@ def run_gui(
                 for column_index, value in enumerate(row_values[:MAX_GRID_COLUMNS])
             ] + [""] * (MAX_GRID_COLUMNS - len(row_values))
             for column_index, value in enumerate(padded_row):
-                is_visible = column_index < active_column_count
+                is_visible = (
+                    column_index < active_column_count
+                    and row_index < min(len(rows), row_capacity)
+                )
                 window[f"CELL_{row_index}_{column_index}"].update(value if is_visible else "", visible=is_visible)
+        return fit_visible_grid_rows(window, active_column_count, min(len(rows), MAX_GRID_ROWS, row_capacity))
 
-    def render_current_event(events: list[dict[str, Any]], index: int | None) -> int | None:
-        if not events:
+    def render_current_event(events: list[dict[str, Any]]) -> None:
+        nonlocal displayed_column_limit
+        current_event = select_display_event(events)
+        if current_event is None:
+            update_empty_leaderboard(window, True, message="No tournaments found")
             window["TITLE"].update(DEFAULT_TITLE)
             window["TOURNAMENT_LOGO"].update(visible=False)
             window["DATE_RANGE"].update("")
-            window["STATUS"].update("No tournament data is available right now.")
+            window["STATUS"].update("")
             window["COURSE"].update("")
             window["LOCATION"].update("")
             window["WEATHER"].update("")
@@ -342,22 +621,21 @@ def run_gui(
             update_grid([], [])
             now = datetime.now().strftime(TIME_FORMAT)
             window["LAST_UPDATE"].update(f"Last update ({now}): waiting for tournament data")
-            return None
+            return
 
-        next_index = get_next_event_index(events, index)
-        current_event = events[next_index]
         metadata, headers, rows = get_tournament_presentation_data(current_event, top_n=TOP_N_DISPLAY)
+        has_players = bool(rows)
+        update_empty_leaderboard(window, not has_players, metadata.get("logo_path", ""))
         if metadata.get("is_live"):
-            add_tee_times_to_live_rows(current_event, rows)
+            add_hole_progress_to_live_rows(current_event, rows)
         if orientation == "vertical":
-            visible_columns = 4 if metadata.get("is_live") else MAX_GRID_COLUMNS
-            headers = headers[:visible_columns]
-            rows = [row[:visible_columns] for row in rows]
-        update_grid(headers, rows)
+            displayed_column_limit = 4 if metadata.get("is_live") else MAX_GRID_COLUMNS
+        else:
+            displayed_column_limit = MAX_GRID_COLUMNS
         event_name = current_event.get("shortName", current_event.get("name", "Tournament"))
         window["TITLE"].update(str(event_name))
         logo_path = metadata.get("logo_path", "")
-        logo_bytes = fetch_logo_bytes(logo_path) if logo_path else None
+        logo_bytes = fetch_logo_bytes(logo_path) if logo_path and has_players else None
         if logo_bytes:
             window["TOURNAMENT_LOGO"].update(data=logo_bytes, visible=True)
         else:
@@ -371,9 +649,36 @@ def run_gui(
         window["TODAY"].update(f"Today: {metadata['today']}" if metadata["today"] else "")
         now = datetime.now().strftime(TIME_FORMAT)
         window["LAST_UPDATE"].update(f"Last update: {now}")
-        return next_index
+        visible_rows = update_grid(headers, rows)
+        if metadata.get("is_live") and get_visible_column_count(headers, window.TKroot.winfo_width()) >= 4:
+            # Only request tee times after event details and complete rows are laid out.
+            add_tee_times_to_live_rows(current_event, rows[:visible_rows])
+            update_grid(headers, rows)
 
-    current_index = render_current_event(live_events, None)
+    render_current_event(live_events)
+
+    pending_layout = None
+    last_window_size = None
+
+    def refit_grid() -> None:
+        nonlocal pending_layout
+        pending_layout = None
+        update_grid(displayed_headers, displayed_rows)
+
+    def on_window_resize(event: Any) -> None:
+        nonlocal pending_layout, last_window_size
+        if event.widget != window.TKroot:
+            return
+        dimensions = (event.width, event.height)
+        if dimensions == last_window_size:
+            return
+        last_window_size = dimensions
+        if pending_layout is not None:
+            window.TKroot.after_cancel(pending_layout)
+        pending_layout = window.TKroot.after(100, refit_grid)
+
+    window.TKroot.bind("<Configure>", on_window_resize, add="+")
+    pending_layout = window.TKroot.after(100, refit_grid)
 
     while True:
         event, _ = window.read(timeout=AUTO_REFRESH_MS)
@@ -381,30 +686,19 @@ def run_gui(
         if event == Sg.WIN_CLOSED or (isinstance(event, str) and event.startswith("Escape")):
             break
 
-        if isinstance(event, str) and (event.startswith("Right") or event.endswith(":39")):
-            current_index = render_current_event(live_events, current_index)
-            continue
-
-        if isinstance(event, str) and (event.startswith("Left") or event.endswith(":37")):
-            if live_events:
-                if current_index is None:
-                    current_index = len(live_events) - 1
-                    current_index = render_current_event(live_events, current_index - 1)
-                else:
-                    previous_index = (current_index - 1) % len(live_events)
-                    current_index = render_current_event(live_events, previous_index - 1)
-            continue
-
         if event == Sg.TIMEOUT_EVENT:
             try:
                 live_events = get_preferred_events()
-                current_index = render_current_event(live_events, current_index)
+                render_current_event(live_events)
             except Exception as exc:
                 # Keep current content if refresh fails temporarily.
+                logging.getLogger(__name__).exception("LCD refresh failed; retaining current content")
                 now = datetime.now().strftime(TIME_FORMAT)
                 window["LAST_UPDATE"].update(f"Last update failed ({now}): {exc}")
             continue
 
+    if pending_layout is not None:
+        window.TKroot.after_cancel(pending_layout)
     window.close()
 
 
@@ -443,7 +737,7 @@ if __name__ == "__main__":
         if args.size is not None:
             parser.error("--size applies only to screen mode; the PhotoPainter resolution is fixed at 800x480")
         try:
-            if __package__:
+            if __package__ and not TYPE_CHECKING:
                 from .golf_epaper import run_epaper
             else:
                 from golf_epaper import run_epaper

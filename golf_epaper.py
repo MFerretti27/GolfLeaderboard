@@ -1,31 +1,34 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-if __package__:
+if __package__ and not TYPE_CHECKING:
     from .golf import (
-        get_preferred_events,
         get_player_tee_off_time,
+        get_preferred_events,
         get_round_hole_progress,
         get_scheduled_round_number,
         get_tournament_presentation_data,
         safe_int,
+        select_display_event,
     )
 else:
     from golf import (
-        get_preferred_events,
         get_player_tee_off_time,
+        get_preferred_events,
         get_round_hole_progress,
         get_scheduled_round_number,
         get_tournament_presentation_data,
         safe_int,
+        select_display_event,
     )
 
 DISPLAY_WIDTH = 800
@@ -144,6 +147,8 @@ def draw_scoreboard(
     """Render a leaderboard for portrait or landscape panel mounting."""
     from PIL import Image, ImageDraw, ImageFont
 
+    message_font: ImageFont.FreeTypeFont | ImageFont.ImageFont
+    hole_font: ImageFont.FreeTypeFont | ImageFont.ImageFont
     if orientation not in ("vertical", "horizontal"):
         raise ValueError("orientation must be 'vertical' or 'horizontal'")
     is_vertical = orientation == "vertical"
@@ -345,10 +350,10 @@ def draw_scoreboard(
             except TypeError:
                 message_font = header_font
 
-        logo_path = metadata.get("logo_path") or str(Path(__file__).resolve().parent / "images" / "pga_logo.png")
+        empty_logo_path = metadata.get("logo_path") or str(Path(__file__).resolve().parent / "images" / "pga_logo.png")
         logo = None
         try:
-            with Image.open(logo_path) as source:
+            with Image.open(empty_logo_path) as source:
                 logo = source.convert("RGBA")
             alpha_bounds = logo.getchannel("A").getbbox()
             if alpha_bounds:
@@ -422,7 +427,6 @@ def run_epaper(
     epd_module = load_driver(driver_path)
     epd = epd_module.EPD()
     initialized = False
-    current_index = -1
     last_display_buffer: Any = None
     last_displayed_at = datetime.now()
 
@@ -434,11 +438,7 @@ def run_epaper(
         while True:
             try:
                 events = get_preferred_events()
-                if events:
-                    current_index = (current_index + 1) % len(events)
-                    current_event = events[current_index]
-                else:
-                    current_event = None
+                current_event = select_display_event(events)
 
                 image = draw_scoreboard(current_event, last_displayed_at, orientation)
                 display_buffer = epd.getbuffer(image)
@@ -453,8 +453,8 @@ def run_epaper(
                     print(f"No visible changes at {datetime.now():%Y-%m-%d %H:%M:%S}; skipped refresh")
             except KeyboardInterrupt:
                 break
-            except Exception as exc:
-                print(f"Refresh failed; retaining the current e-paper image: {exc}")
+            except Exception:
+                logging.getLogger(__name__).exception("Refresh failed; retaining the current e-paper image")
             time.sleep(refresh_seconds)
     finally:
         if initialized:

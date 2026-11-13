@@ -63,7 +63,7 @@ jobs:
         with:
           check_filenames: true
           skip: .git,venv,__pycache__,*.svg
-          ignore_words_list: "teh,func,ign,nd,OT,toi,TOI,FO,Consolas"
+          ignore_words_list: "teh,func,ign,nd,OT,toi,TOI,FO,Consolas,rime"
 
   sonarcloud:
     name: 📊 SonarCloud Analysis

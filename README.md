@@ -107,7 +107,7 @@ Both LCD orientations show only complete rows within the frame borders and
 recalculate the visible row count after fullscreen or window-size changes.
 LCD row capacity scales with screen height rather than being capped at 25
 players, so taller displays can show more players without clipping.
-Portrait text scales against a 600x1024 reference display for readability,
+Text scales against a 600x1024 portrait or 1024x600 landscape reference for readability,
 prioritizing larger text over fitting more players; only complete rows are shown.
 
 On the LCD live leaderboard, Today includes holes completed, such as `-2 (17)` or

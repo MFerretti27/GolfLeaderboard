@@ -12,10 +12,13 @@ class LcdLayoutTests(unittest.TestCase):
                 self.assertEqual(gui.FONT_GRID_SIZE, expected)
                 self.assertEqual(gui.FONT_META_SIZE, expected)
 
-    def test_landscape_font_scale_is_unchanged(self):
-        with patch.dict(gui.__dict__, gui.__dict__.copy()):
-            gui.configure_display("screen", (1024, 600), orientation="horizontal")
-            self.assertEqual(gui.FONT_GRID_SIZE, 11)
+    def test_landscape_fonts_scale_for_readability(self):
+        for size, expected in (((1024, 600), 16), ((800, 480), 12)):
+            for orientation in ("horizontal", None):
+                with self.subTest(size=size, orientation=orientation), patch.dict(gui.__dict__, gui.__dict__.copy()):
+                    gui.configure_display("screen", size, orientation=orientation)
+                    self.assertEqual(gui.FONT_GRID_SIZE, expected)
+                    self.assertEqual(gui.FONT_META_SIZE, expected)
 
     def test_tall_screen_can_display_more_than_25_players(self):
         with patch.dict(gui.__dict__, gui.__dict__.copy()):
@@ -28,6 +31,7 @@ class LcdLayoutTests(unittest.TestCase):
             gui.configure_display("eink")
             self.assertEqual(gui.TOP_N_DISPLAY, 12)
             self.assertEqual(gui.MAX_GRID_ROWS, 12)
+            self.assertEqual(gui.FONT_GRID_SIZE, 14)
 
     def make_window(self):
         elements = {}

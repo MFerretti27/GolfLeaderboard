@@ -91,7 +91,7 @@ def configure_display(
         GRID_WIDTH_SCALE = max(0.55, min(1.0, screen_width / 1200))
         AUTO_REFRESH_MS = (refresh_seconds if refresh_seconds is not None else 30) * 1000
         MAX_GRID_COLUMNS = 7 if orientation == "vertical" else 22
-        reference_size = (600, 1024) if orientation == "vertical" else BASE_SCREEN_SIZE
+        reference_size = (600, 1024) if orientation == "vertical" else (1024, 600)
         scale = max(0.65, min(1.3, min(screen_width / reference_size[0], screen_height / reference_size[1])))
         FONT_GRID_SIZE = max(10, round(16 * scale))
         FONT_META_SIZE = max(10, round(16 * scale))

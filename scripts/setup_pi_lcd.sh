@@ -4,13 +4,13 @@ set -Eeuo pipefail
 # ==============================================================================
 # Golf Leaderboard setup for Raspberry Pi OS Desktop with an LCD/HDMI display.
 # Usage from a development computer (push your branch first):
-#   bash scripts/setup_pi_lcd.sh --ip 10.0.0.119 --user matt
+#   bash scripts/setup_pi_lcd.sh [--ip ADDRESS --user USER] [--orientation vertical|horizontal] [--no-service]
 #
 # Usage locally on the Pi (as the desktop user, without sudo):
 #   bash scripts/setup_pi_lcd.sh
 #
-# Landscape is the default; add --orientation vertical for portrait layout.
-# Rotate the physical display separately in Raspberry Pi OS display settings.
+# Landscape is the default; --orientation vertical also rotates a single active
+# Wayland HDMI/DSI display to portrait at startup, preserving existing portrait.
 # Add --no-service to skip desktop autostart and Wi-Fi recovery.
 # Enable Desktop Autologin for unattended startup; setup requests sudo as needed.
 # ==============================================================================
@@ -29,12 +29,15 @@ Remote mode deploys the published Git branch, not local uncommitted changes.
 
   --ip          Remote Pi address (omit to set up this Pi).
   --user        SSH account (default: pi).
-  --orientation LCD layout (default: horizontal; does not rotate the OS display).
+  --orientation LCD layout (default: horizontal); vertical auto-rotates on Wayland.
   --no-service  Install dependencies only; skip desktop autostart and Wi-Fi recovery.
   -h, --help    Show this help.
 
 Automatic startup requires desktop login as the setup user. Enable desktop
 autologin in raspi-config for unattended startup after boot.
+Portrait rotation detects the active HDMI/DSI output at app startup and keeps
+existing portrait rotation. Landscape outputs rotate to 270 degrees. X11 users
+must rotate the display in desktop settings. Horizontal leaves rotation unchanged.
 EOF
 }
 
@@ -55,6 +58,9 @@ SUDO=(sudo)
 sudo -v
 sudo apt-get update
 sudo apt-get install -y python3 python3-venv python3-tk python3-pil python3-requests
+if [[ "$ORIENTATION" == vertical ]]; then
+    sudo apt-get install -y wlr-randr
+fi
 /usr/bin/python3 -m venv --system-site-packages "${REPO_ROOT}/.venv-lcd"
 "${REPO_ROOT}/.venv-lcd/bin/python" -m pip install -r "${REPO_ROOT}/requirements.txt"
 
@@ -67,6 +73,10 @@ if ((INSTALL_SERVICE)); then
     {
         printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
         printf 'cd %q\n' "$REPO_ROOT"
+        if [[ "$ORIENTATION" == vertical ]]; then
+            printf '/usr/bin/python3 %q >> %q 2>&1\n' \
+                "${SCRIPT_DIR}/lcd_portrait.py" "$HOME/.local/state/golf-leaderboard/lcd.log"
+        fi
         printf 'exec %q %q --display screen --orientation %q >> %q 2>&1\n' \
             "${REPO_ROOT}/.venv-lcd/bin/python" "${REPO_ROOT}/golf_live_gui.py" \
             "$ORIENTATION" "$HOME/.local/state/golf-leaderboard/lcd.log"

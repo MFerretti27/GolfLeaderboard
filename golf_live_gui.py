@@ -90,14 +90,17 @@ def configure_display(
         WINDOW_SIZE = (screen_width, screen_height)
         GRID_WIDTH_SCALE = max(0.55, min(1.0, screen_width / 1200))
         AUTO_REFRESH_MS = (refresh_seconds if refresh_seconds is not None else 30) * 1000
-        TOP_N_DISPLAY = 25
         MAX_GRID_COLUMNS = 7 if orientation == "vertical" else 22
-        scale = max(0.65, min(1.3, min(screen_width / BASE_SCREEN_SIZE[0], screen_height / BASE_SCREEN_SIZE[1])))
+        reference_size = (600, 1024) if orientation == "vertical" else BASE_SCREEN_SIZE
+        scale = max(0.65, min(1.3, min(screen_width / reference_size[0], screen_height / reference_size[1])))
         FONT_GRID_SIZE = max(10, round(16 * scale))
         FONT_META_SIZE = max(10, round(16 * scale))
         FONT_INFO_SIZE = max(9, round(14 * scale))
         FONT_TITLE_SIZE = max(18, round(30 * scale))
-        MAX_GRID_ROWS = 25
+        # Allocate enough cells for the screen; measured geometry determines
+        # how many complete rows are actually shown after layout.
+        MAX_GRID_ROWS = max(25, screen_height // (FONT_GRID_SIZE + 2))
+        TOP_N_DISPLAY = MAX_GRID_ROWS
         THEME = "DarkGreen5"
         ROW_BG_EVEN = "#f5f5f5"
         ROW_BG_ODD = "#ebebeb"
@@ -256,10 +259,15 @@ def fit_visible_grid_rows(window: Any, column_count: int, row_count: int) -> int
     """Hide rows whose rendered cells extend outside the leaderboard viewport."""
     window.TKroot.update_idletasks()
     viewport = window["LEADERBOARD_GRID"].Widget
-    bottom = viewport.winfo_rooty() + viewport.winfo_height()
-    ancestor = viewport.master
+    bottom = window.TKroot.winfo_rooty() + window.TKroot.winfo_height()
+    ancestor = viewport
     while ancestor is not None:
-        bottom = min(bottom, ancestor.winfo_rooty() + ancestor.winfo_height())
+        border = ancestor.winfo_pixels(ancestor.cget("borderwidth"))
+        highlight = ancestor.winfo_pixels(ancestor.cget("highlightthickness"))
+        bottom = min(
+            bottom,
+            ancestor.winfo_rooty() + ancestor.winfo_height() - border - highlight,
+        )
         # FreeSimpleGUI's hidden Tk parent is not part of this window's viewport.
         if ancestor == window.TKroot:
             break
@@ -287,6 +295,9 @@ def fit_visible_grid_rows(window: Any, column_count: int, row_count: int) -> int
         for column_index in range(column_count):
             window[f"CELL_{row_index}_{column_index}"].update(visible=False)
     window.TKroot.update_idletasks()
+    if 0 < visible_rows < row_count:
+        # Hiding rows can change the allocated frame height; verify the new bounds.
+        return fit_visible_grid_rows(window, column_count, visible_rows)
     return visible_rows
 
 
@@ -499,8 +510,13 @@ def run_gui(
     GRID_CHARACTER_WIDTH_PIXELS = float(
         tkfont.Font(root=window.TKroot, font=FONT_GRID_CELL).measure("0")
     )
+    displayed_headers: list[str] = []
+    displayed_rows: list[list[str]] = []
+
     def update_grid(headers: list[str], rows: list[list[str]]) -> None:
         global PLAYER_NAME_COLUMN_WIDTH
+        nonlocal displayed_headers, displayed_rows
+        displayed_headers, displayed_rows = headers, rows
         active_column_count = min(len(headers), MAX_GRID_COLUMNS)
         if active_column_count > 1:
             PLAYER_NAME_COLUMN_WIDTH = get_player_name_column_width(active_column_count, WINDOW_SIZE[0])
@@ -580,6 +596,29 @@ def run_gui(
 
     render_current_event(live_events)
 
+    pending_layout = None
+    last_window_size = None
+
+    def refit_grid() -> None:
+        nonlocal pending_layout
+        pending_layout = None
+        update_grid(displayed_headers, displayed_rows)
+
+    def on_window_resize(event: Any) -> None:
+        nonlocal pending_layout, last_window_size
+        if event.widget != window.TKroot:
+            return
+        dimensions = (event.width, event.height)
+        if dimensions == last_window_size:
+            return
+        last_window_size = dimensions
+        if pending_layout is not None:
+            window.TKroot.after_cancel(pending_layout)
+        pending_layout = window.TKroot.after(100, refit_grid)
+
+    window.TKroot.bind("<Configure>", on_window_resize, add="+")
+    pending_layout = window.TKroot.after(100, refit_grid)
+
     while True:
         event, _ = window.read(timeout=AUTO_REFRESH_MS)
 
@@ -596,6 +635,8 @@ def run_gui(
                 window["LAST_UPDATE"].update(f"Last update failed ({now}): {exc}")
             continue
 
+    if pending_layout is not None:
+        window.TKroot.after_cancel(pending_layout)
     window.close()
 
 

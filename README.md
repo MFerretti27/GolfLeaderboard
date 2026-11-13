@@ -103,6 +103,12 @@ python3 golf_live_gui.py --display screen --orientation horizontal
 LCD mode detects the primary display resolution, fits the window to the available screen, scales text, and adjusts the visible row count. Use `--size WIDTHxHEIGHT` to override the detected window size.
 Visible leaderboard columns expand to fill the grid width. In portrait, the
 tournament title wraps on its own row below the logo instead of being clipped.
+Both LCD orientations show only complete rows within the frame borders and
+recalculate the visible row count after fullscreen or window-size changes.
+LCD row capacity scales with screen height rather than being capped at 25
+players, so taller displays can show more players without clipping.
+Portrait text scales against a 600x1024 reference display for readability,
+prioritizing larger text over fitting more players; only complete rows are shown.
 
 On the LCD live leaderboard, Today includes holes completed, such as `-2 (17)` or
 `E (F)` for a finished round. Players who have not started still show their tee time when available.
@@ -242,8 +248,13 @@ bash scripts/setup_pi_lcd.sh --ip 192.168.1.42 --user pi
 Setup installs Tk and Python packages, creates an isolated `.venv-lcd/`
 environment, and installs the shared Wi-Fi recovery service. It does not install
 PhotoPainter drivers or enable SPI. Horizontal layout is the default; add
-`--orientation vertical` for portrait. Configure physical display rotation in
-Raspberry Pi OS display settings; the option only changes the app layout.
+`--orientation vertical` for portrait. With automatic startup enabled, portrait
+mode detects the single enabled Wayland output (HDMI or DSI) and rotates a
+landscape display to 270 degrees before starting the app. Existing portrait
+rotation is preserved. This runs at each app start, including after desktop login,
+so no output name needs to be hardcoded. Connect only one enabled display.
+Horizontal mode leaves desktop rotation unchanged. On X11, or with `--no-service`,
+configure rotation in Raspberry Pi OS display settings instead.
 
 The app starts at the next desktop login via
 `~/.config/autostart/golf-leaderboard-lcd.desktop`, using the desktop's X11 or

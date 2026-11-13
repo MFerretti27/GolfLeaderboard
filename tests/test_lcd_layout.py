@@ -5,11 +5,37 @@ import golf_live_gui as gui
 
 
 class LcdLayoutTests(unittest.TestCase):
+    def test_portrait_fonts_scale_for_readability(self):
+        for size, expected in (((600, 1024), 16), ((480, 800), 12)):
+            with self.subTest(size=size), patch.dict(gui.__dict__, gui.__dict__.copy()):
+                gui.configure_display("screen", size, orientation="vertical")
+                self.assertEqual(gui.FONT_GRID_SIZE, expected)
+                self.assertEqual(gui.FONT_META_SIZE, expected)
+
+    def test_landscape_font_scale_is_unchanged(self):
+        with patch.dict(gui.__dict__, gui.__dict__.copy()):
+            gui.configure_display("screen", (1024, 600), orientation="horizontal")
+            self.assertEqual(gui.FONT_GRID_SIZE, 11)
+
+    def test_tall_screen_can_display_more_than_25_players(self):
+        with patch.dict(gui.__dict__, gui.__dict__.copy()):
+            gui.configure_display("screen", (600, 1024), orientation="vertical")
+            self.assertEqual(gui.TOP_N_DISPLAY, gui.MAX_GRID_ROWS)
+            self.assertGreater(gui.MAX_GRID_ROWS, 25)
+
+    def test_eink_keeps_existing_player_limit(self):
+        with patch.dict(gui.__dict__, gui.__dict__.copy()):
+            gui.configure_display("eink")
+            self.assertEqual(gui.TOP_N_DISPLAY, 12)
+            self.assertEqual(gui.MAX_GRID_ROWS, 12)
+
     def make_window(self):
         elements = {}
         window = MagicMock()
         window.__getitem__.side_effect = lambda key: elements.setdefault(key, MagicMock())
         window["TITLE"].Widget.winfo_width.return_value = 450
+        window.TKroot.winfo_pixels.return_value = 0
+        window["LEADERBOARD_GRID"].Widget.winfo_pixels.return_value = 0
         return window
 
     def test_portrait_title_wraps_to_allocated_width(self):
@@ -70,6 +96,26 @@ class LcdLayoutTests(unittest.TestCase):
             widget.winfo_height.return_value = 25
             widget.winfo_reqheight.return_value = 25
         self.assertEqual(gui.fit_visible_grid_rows(window, 4, 1), 1)
+
+    def test_row_overlapping_frame_border_is_hidden(self):
+        window = self.make_window()
+        viewport = window["LEADERBOARD_GRID"].Widget
+        viewport.winfo_rooty.return_value = 100
+        viewport.winfo_height.return_value = 100
+        viewport.master = window.TKroot
+        viewport.cget.side_effect = lambda option: "2" if option == "borderwidth" else "0"
+        viewport.winfo_pixels.side_effect = int
+        window.TKroot.winfo_rooty.return_value = 0
+        window.TKroot.winfo_height.return_value = 200
+        for col in range(4):
+            widget = window[f"CELL_0_{col}"].Widget
+            widget.winfo_ismapped.return_value = True
+            widget.winfo_rooty.return_value = 174
+            widget.winfo_height.return_value = 25
+            widget.winfo_reqheight.return_value = 25
+        self.assertEqual(gui.fit_visible_grid_rows(window, 4, 1), 0)
+        for col in range(4):
+            window[f"CELL_0_{col}"].update.assert_called_once_with(visible=False)
 
 
 if __name__ == "__main__":

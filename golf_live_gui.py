@@ -542,8 +542,8 @@ def run_gui(
     try:
         live_events = get_preferred_events()
     except Exception as exc:
-        Sg.popup_error(f"Could not fetch live tournaments.\n\n{exc}")
-        raise RuntimeError("Could not fetch tournaments at startup.") from exc
+        logging.getLogger(__name__).exception("Could not fetch tournaments at startup")
+        raise RuntimeError(f"Could not fetch tournaments at startup: {exc}") from exc
 
     window = Sg.Window(
         WINDOW_TITLE,
@@ -564,14 +564,19 @@ def run_gui(
     fit_lcd_content_width(window, MAX_GRID_COLUMNS)
     displayed_headers: list[str] = []
     displayed_rows: list[list[str]] = []
+    displayed_column_limit = MAX_GRID_COLUMNS
 
-    def update_grid(headers: list[str], rows: list[list[str]]) -> None:
+    def update_grid(headers: list[str], rows: list[list[str]]) -> int:
         global PLAYER_NAME_COLUMN_WIDTH
         nonlocal displayed_headers, displayed_rows
         displayed_headers, displayed_rows = headers, rows
-        active_column_count = min(len(headers), MAX_GRID_COLUMNS)
+        window.TKroot.update_idletasks()
+        current_width = window.TKroot.winfo_width()
+        active_column_count = min(
+            len(headers), displayed_column_limit, get_visible_column_count(headers, current_width)
+        )
         if active_column_count > 1:
-            PLAYER_NAME_COLUMN_WIDTH = get_player_name_column_width(active_column_count, WINDOW_SIZE[0])
+            PLAYER_NAME_COLUMN_WIDTH = get_player_name_column_width(active_column_count, current_width)
         else:
             PLAYER_NAME_COLUMN_WIDTH = get_base_column_width(1)
         window["HEADER_1"].set_size((PLAYER_NAME_COLUMN_WIDTH, 1))
@@ -597,9 +602,10 @@ def run_gui(
                     and row_index < min(len(rows), row_capacity)
                 )
                 window[f"CELL_{row_index}_{column_index}"].update(value if is_visible else "", visible=is_visible)
-        fit_visible_grid_rows(window, active_column_count, min(len(rows), MAX_GRID_ROWS, row_capacity))
+        return fit_visible_grid_rows(window, active_column_count, min(len(rows), MAX_GRID_ROWS, row_capacity))
 
     def render_current_event(events: list[dict[str, Any]]) -> None:
+        nonlocal displayed_column_limit
         current_event = select_display_event(events)
         if current_event is None:
             update_empty_leaderboard(window, True, message="No tournaments found")
@@ -622,14 +628,10 @@ def run_gui(
         update_empty_leaderboard(window, not has_players, metadata.get("logo_path", ""))
         if metadata.get("is_live"):
             add_hole_progress_to_live_rows(current_event, rows)
-            add_tee_times_to_live_rows(current_event, rows)
         if orientation == "vertical":
-            max_columns = 4 if metadata.get("is_live") else len(headers)
+            displayed_column_limit = 4 if metadata.get("is_live") else MAX_GRID_COLUMNS
         else:
-            max_columns = len(headers)
-        visible_columns = min(max_columns, get_visible_column_count(headers, WINDOW_SIZE[0]))
-        headers = headers[:visible_columns]
-        rows = [row[:visible_columns] for row in rows[:MAX_GRID_ROWS]]
+            displayed_column_limit = MAX_GRID_COLUMNS
         event_name = current_event.get("shortName", current_event.get("name", "Tournament"))
         window["TITLE"].update(str(event_name))
         logo_path = metadata.get("logo_path", "")
@@ -647,7 +649,11 @@ def run_gui(
         window["TODAY"].update(f"Today: {metadata['today']}" if metadata["today"] else "")
         now = datetime.now().strftime(TIME_FORMAT)
         window["LAST_UPDATE"].update(f"Last update: {now}")
-        update_grid(headers, rows)
+        visible_rows = update_grid(headers, rows)
+        if metadata.get("is_live") and get_visible_column_count(headers, window.TKroot.winfo_width()) >= 4:
+            # Only request tee times after event details and complete rows are laid out.
+            add_tee_times_to_live_rows(current_event, rows[:visible_rows])
+            update_grid(headers, rows)
 
     render_current_event(live_events)
 

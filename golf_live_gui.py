@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
 
-if __package__:
+if __package__ and not TYPE_CHECKING:
     from .golf import get_player_tee_off_time, get_preferred_events, get_round_hole_progress, get_scheduled_round_number, get_tournament_presentation_data, safe_int, select_display_event
 else:
     from golf import get_player_tee_off_time, get_preferred_events, get_round_hole_progress, get_scheduled_round_number, get_tournament_presentation_data, safe_int, select_display_event
@@ -201,6 +201,8 @@ def get_column_width(column_index: int) -> int:
 
 def get_base_column_width(column_index: int) -> int:
     """Return the default character width before expanding the player column."""
+    base_widths: tuple[int, ...]
+    minimum_widths: tuple[int, ...]
     if SCREEN_ORIENTATION == "vertical":
         base_widths = (5, 24, 6, 10, 6, 6, 6)
         minimum_widths = (3, 8, 5, 10, 3, 3, 3)
@@ -710,7 +712,7 @@ if __name__ == "__main__":
         if args.size is not None:
             parser.error("--size applies only to screen mode; the PhotoPainter resolution is fixed at 800x480")
         try:
-            if __package__:
+            if __package__ and not TYPE_CHECKING:
                 from .golf_epaper import run_epaper
             else:
                 from golf_epaper import run_epaper

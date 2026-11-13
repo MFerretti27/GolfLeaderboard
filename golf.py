@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import re
 from time import monotonic
+from typing import Any
 
 SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
 CORE_EVENT_URL = "https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/{event_id}"
@@ -13,9 +14,9 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 # Round stat indices from ESPN's statistics categories
 # Order: birdies, eagles, double_bogeys, bogeys, other, pars
 ROUND_STAT_NAMES = ["Birdies", "Eagles", "Dbl Bogeys", "Bogeys", "Other", "Pars"]
-EVENT_DETAILS_CACHE = {}
-PLAYER_TEE_TIME_CACHE = {}
-WEATHER_CACHE = {}
+EVENT_DETAILS_CACHE: dict[str, dict[str, Any]] = {}
+PLAYER_TEE_TIME_CACHE: dict[tuple[str, str, str, int], tuple[float, str]] = {}
+WEATHER_CACHE: dict[str, str] = {}
 TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "images"
 LEGACY_TOURNAMENT_IMAGE_DIR = Path(__file__).resolve().parent / "tournament_images"
 

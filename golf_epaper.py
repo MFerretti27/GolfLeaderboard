@@ -7,9 +7,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-if __package__:
+if __package__ and not TYPE_CHECKING:
     from .golf import (
         get_preferred_events,
         get_player_tee_off_time,
@@ -146,6 +146,8 @@ def draw_scoreboard(
     """Render a leaderboard for portrait or landscape panel mounting."""
     from PIL import Image, ImageDraw, ImageFont
 
+    message_font: ImageFont.FreeTypeFont | ImageFont.ImageFont
+    hole_font: ImageFont.FreeTypeFont | ImageFont.ImageFont
     if orientation not in ("vertical", "horizontal"):
         raise ValueError("orientation must be 'vertical' or 'horizontal'")
     is_vertical = orientation == "vertical"
@@ -347,10 +349,10 @@ def draw_scoreboard(
             except TypeError:
                 message_font = header_font
 
-        logo_path = metadata.get("logo_path") or str(Path(__file__).resolve().parent / "images" / "pga_logo.png")
+        empty_logo_path = metadata.get("logo_path") or str(Path(__file__).resolve().parent / "images" / "pga_logo.png")
         logo = None
         try:
-            with Image.open(logo_path) as source:
+            with Image.open(empty_logo_path) as source:
                 logo = source.convert("RGBA")
             alpha_bounds = logo.getchannel("A").getbbox()
             if alpha_bounds:

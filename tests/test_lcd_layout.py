@@ -58,6 +58,26 @@ class LcdLayoutTests(unittest.TestCase):
         widget.pack_info.return_value = {"ipady": 2}
         self.assertEqual(gui.fit_visible_grid_rows(window, 1, 1), 0)
 
+    def test_capacity_is_measured_before_rows_are_shown(self):
+        window = self.make_window()
+        viewport = window["LEADERBOARD_GRID"].Widget
+        viewport.winfo_rooty.return_value = 100
+        viewport.winfo_height.return_value = 100
+        viewport.master = window.TKroot
+        window.TKroot.winfo_rooty.return_value = 0
+        window.TKroot.winfo_height.return_value = 200
+        header = window["HEADER_0"].Widget.master
+        header.winfo_rooty.return_value = 100
+        header.winfo_height.return_value = 30
+        for col in range(4):
+            widget = window[f"CELL_0_{col}"].Widget
+            widget.winfo_reqheight.return_value = 25
+            widget.pack_info.return_value = {"ipady": 2}
+        self.assertEqual(gui.get_grid_row_capacity(window, 4), 2)
+        for col in range(4):
+            window[f"CELL_0_{col}"].update.assert_not_called()
+        self.assertEqual(gui.get_grid_row_capacity(window, 0), 0)
+
     def test_portrait_title_wraps_to_allocated_width(self):
         window = self.make_window()
         with patch.object(gui, "SCREEN_ORIENTATION", "vertical"):

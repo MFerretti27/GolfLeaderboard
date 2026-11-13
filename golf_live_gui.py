@@ -255,9 +255,8 @@ def get_player_name_column_width(visible_column_count: int, screen_width: int) -
     return max(8, int(remaining_width / character_width))
 
 
-def fit_visible_grid_rows(window: Any, column_count: int, row_count: int) -> int:
-    """Hide rows whose rendered cells extend outside the leaderboard viewport."""
-    window.TKroot.update_idletasks()
+def get_grid_viewport_bottom(window: Any) -> int:
+    """Return the usable bottom edge shared by the grid and its ancestors."""
     viewport = window["LEADERBOARD_GRID"].Widget
     bottom = window.TKroot.winfo_rooty() + window.TKroot.winfo_height()
     ancestor = viewport
@@ -272,6 +271,29 @@ def fit_visible_grid_rows(window: Any, column_count: int, row_count: int) -> int
         if ancestor == window.TKroot:
             break
         ancestor = ancestor.master
+    return bottom
+
+
+def get_grid_row_capacity(window: Any, column_count: int) -> int:
+    """Budget uniform rows before mapping them, avoiding refresh-time flashes."""
+    if column_count == 0:
+        return 0
+    window.TKroot.update_idletasks()
+    header = window["HEADER_0"].Widget.master
+    row_height = max(
+        window[f"CELL_0_{column}"].Widget.winfo_reqheight()
+        + 2 * int(window[f"CELL_0_{column}"].Widget.pack_info().get("ipady", 0))
+        + 2 * PAD_CELL[1]
+        for column in range(column_count)
+    )
+    top = header.winfo_rooty() + header.winfo_height()
+    return max(0, (get_grid_viewport_bottom(window) - top) // row_height)
+
+
+def fit_visible_grid_rows(window: Any, column_count: int, row_count: int) -> int:
+    """Hide rows whose rendered cells extend outside the leaderboard viewport."""
+    window.TKroot.update_idletasks()
+    bottom = get_grid_viewport_bottom(window)
 
     visible_rows = 0
     for row_index in range(row_count):
@@ -537,6 +559,8 @@ def run_gui(
             is_visible = column_index < active_column_count
             window[f"HEADER_{column_index}"].update(header if is_visible else "", visible=is_visible)
 
+        fit_lcd_content_width(window, active_column_count)
+        row_capacity = get_grid_row_capacity(window, active_column_count)
         for row_index in range(MAX_GRID_ROWS):
             row_values = rows[row_index] if row_index < len(rows) else []
             padded_row = [
@@ -544,11 +568,12 @@ def run_gui(
                 for column_index, value in enumerate(row_values[:MAX_GRID_COLUMNS])
             ] + [""] * (MAX_GRID_COLUMNS - len(row_values))
             for column_index, value in enumerate(padded_row):
-                is_visible = column_index < active_column_count and row_index < len(rows)
+                is_visible = (
+                    column_index < active_column_count
+                    and row_index < min(len(rows), row_capacity)
+                )
                 window[f"CELL_{row_index}_{column_index}"].update(value if is_visible else "", visible=is_visible)
-        window.refresh()
-        fit_lcd_content_width(window, active_column_count)
-        fit_visible_grid_rows(window, active_column_count, min(len(rows), MAX_GRID_ROWS))
+        fit_visible_grid_rows(window, active_column_count, min(len(rows), MAX_GRID_ROWS, row_capacity))
 
     def render_current_event(events: list[dict[str, Any]]) -> None:
         current_event = select_display_event(events)

@@ -183,6 +183,47 @@ class LcdStartupResizeTests(unittest.TestCase):
                 self.assertTrue(all(row[3] == "-" for row in rows[2:]))
             window["HEADER_4"].update.assert_called_with("", visible=False)
 
+    def test_refresh_keeps_tee_time_visible_until_new_value_is_ready(self):
+        window = self.make_window()
+        window.TKroot.winfo_width.return_value = 600
+        toolkit = MagicMock(WIN_CLOSED="CLOSED", TIMEOUT_EVENT="TIMEOUT")
+        toolkit.Window.return_value = window
+        event = {"id": "event-1", "competitions": [{"competitors": [{"order": 1}]}]}
+        presentations = [self.presentation() for _ in range(4)]
+        for _, _, rows in presentations:
+            del rows[1:]
+        presentations[3][2][0][1] = "Different player"
+        updates = []
+
+        def read(*, timeout):
+            cell = window["CELL_0_3"]
+            updates.append([call.args[0] for call in cell.update.call_args_list])
+            cell.update.reset_mock()
+            return (toolkit.TIMEOUT_EVENT if len(updates) < 4 else toolkit.WIN_CLOSED), {}
+
+        window.read.side_effect = read
+        with (
+            patch.dict(gui.__dict__, gui.__dict__.copy()),
+            patch.dict(sys.modules, FreeSimpleGUI=toolkit),
+            patch.object(gui, "get_preferred_events", return_value=[event]),
+            patch.object(gui, "select_display_event", return_value=event),
+            patch.object(gui, "build_main_layout", return_value=[]),
+            patch("tkinter.font.Font") as font,
+            patch.object(gui, "get_tournament_presentation_data", side_effect=presentations),
+            patch.object(gui, "add_hole_progress_to_live_rows"),
+            patch.object(gui, "fit_lcd_content_width"),
+            patch.object(gui, "get_grid_row_capacity", return_value=1),
+            patch.object(gui, "fit_visible_grid_rows", return_value=1),
+            patch.object(gui, "get_player_tee_off_time", side_effect=["9:00 AM", "9:00 AM", "9:30 AM", "10:00 AM"]),
+        ):
+            font.return_value.measure.return_value = 8
+            gui.run_gui(size=(600, 1024), orientation="vertical")
+
+        self.assertEqual(updates[0], ["-", "9:00 AM"])
+        self.assertEqual(updates[1], ["9:00 AM", "9:00 AM"])
+        self.assertEqual(updates[2], ["9:00 AM", "9:30 AM"])
+        self.assertEqual(updates[3], ["-", "10:00 AM"])
+
 
 if __name__ == "__main__":
     unittest.main()

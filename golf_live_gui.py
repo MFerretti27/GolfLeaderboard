@@ -565,6 +565,7 @@ def run_gui(
     displayed_headers: list[str] = []
     displayed_rows: list[list[str]] = []
     displayed_column_limit = MAX_GRID_COLUMNS
+    displayed_event_id: Any = None
 
     def update_grid(headers: list[str], rows: list[list[str]]) -> int:
         global PLAYER_NAME_COLUMN_WIDTH
@@ -605,9 +606,10 @@ def run_gui(
         return fit_visible_grid_rows(window, active_column_count, min(len(rows), MAX_GRID_ROWS, row_capacity))
 
     def render_current_event(events: list[dict[str, Any]]) -> None:
-        nonlocal displayed_column_limit
+        nonlocal displayed_column_limit, displayed_event_id
         current_event = select_display_event(events)
         if current_event is None:
+            displayed_event_id = None
             update_empty_leaderboard(window, True, message="No tournaments found")
             window["TITLE"].update(DEFAULT_TITLE)
             window["TOURNAMENT_LOGO"].update(visible=False)
@@ -649,11 +651,28 @@ def run_gui(
         window["TODAY"].update(f"Today: {metadata['today']}" if metadata["today"] else "")
         now = datetime.now().strftime(TIME_FORMAT)
         window["LAST_UPDATE"].update(f"Last update: {now}")
-        visible_rows = update_grid(headers, rows)
-        if metadata.get("is_live") and get_visible_column_count(headers, window.TKroot.winfo_width()) >= 4:
+        needs_tee_times = (
+            metadata.get("is_live")
+            and get_visible_column_count(headers, window.TKroot.winfo_width()) >= 4
+        )
+        layout_rows = [row.copy() for row in rows]
+        event_id = current_event.get("id")
+        if (
+            needs_tee_times
+            and event_id is not None
+            and event_id == displayed_event_id
+            and headers[:4] == displayed_headers[:4]
+        ):
+            # Keep the previous value while the visible rows are measured and tee times are fetched.
+            for row, previous in zip(layout_rows, displayed_rows):
+                if len(row) > 3 and len(previous) > 3 and row[1] == previous[1] and row[3] == "-":
+                    row[3] = previous[3]
+        visible_rows = update_grid(headers, layout_rows)
+        if needs_tee_times:
             # Only request tee times after event details and complete rows are laid out.
             add_tee_times_to_live_rows(current_event, rows[:visible_rows])
             update_grid(headers, rows)
+        displayed_event_id = event_id
 
     render_current_event(live_events)
 

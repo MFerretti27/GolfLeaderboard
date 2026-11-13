@@ -282,7 +282,7 @@ def get_grid_row_capacity(window: Any, column_count: int) -> int:
     header = window["HEADER_0"].Widget.master
     row_height = max(
         window[f"CELL_0_{column}"].Widget.winfo_reqheight()
-        + 2 * int(window[f"CELL_0_{column}"].Widget.pack_info().get("ipady", 0))
+        + 4
         + 2 * PAD_CELL[1]
         for column in range(column_count)
     )
@@ -452,6 +452,9 @@ def fit_lcd_content_width(window: Any, column_count: int) -> None:
         prefix = "HEADER" if row_index == -1 else f"CELL_{row_index}"
         for column_index in range(column_count):
             element = window[f"{prefix}_{column_index}"]
+            # expand() packs the widget again, so never call it on hidden cells.
+            if element.Widget.winfo_manager() != "pack":
+                continue
             # Balance the font's descent space with a small inset above the text.
             element.Widget.configure(anchor="sw" if column_index == 1 else "s", pady=0)
             element.expand(expand_x=True, expand_row=False)
@@ -538,6 +541,7 @@ def run_gui(
     GRID_CHARACTER_WIDTH_PIXELS = float(
         tkfont.Font(root=window.TKroot, font=FONT_GRID_CELL).measure("0")
     )
+    fit_lcd_content_width(window, MAX_GRID_COLUMNS)
     displayed_headers: list[str] = []
     displayed_rows: list[list[str]] = []
 

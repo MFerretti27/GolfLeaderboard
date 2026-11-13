@@ -90,6 +90,11 @@ class LcdLayoutTests(unittest.TestCase):
             gui.fit_lcd_content_width(window, 4)
         for prefix in ("HEADER", "CELL_0", "CELL_1"):
             for col in range(4):
+                window[f"{prefix}_{col}"].Widget.winfo_manager.return_value = "pack"
+        with patch.object(gui, "MAX_GRID_ROWS", 2):
+            gui.fit_lcd_content_width(window, 4)
+        for prefix in ("HEADER", "CELL_0", "CELL_1"):
+            for col in range(4):
                 window[f"{prefix}_{col}"].Widget.configure.assert_called_once_with(
                     anchor="sw" if col == 1 else "s", pady=0,
                 )
@@ -98,6 +103,17 @@ class LcdLayoutTests(unittest.TestCase):
                     expand_x=True, expand_row=False,
                 )
             window[f"{prefix}_4"].expand.assert_not_called()
+
+    def test_width_fitting_never_repacks_hidden_rows(self):
+        window = self.make_window()
+        for col in range(4):
+            window[f"CELL_0_{col}"].Widget.winfo_manager.return_value = ""
+        with patch.object(gui, "MAX_GRID_ROWS", 1):
+            gui.fit_lcd_content_width(window, 4)
+        for col in range(4):
+            element = window[f"CELL_0_{col}"]
+            element.expand.assert_not_called()
+            element.Widget.pack_configure.assert_not_called()
 
     def test_landscape_title_keeps_existing_format(self):
         window = self.make_window()

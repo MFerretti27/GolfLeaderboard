@@ -55,11 +55,11 @@ repo_url=\$(printf %s ${repo_b64} | base64 --decode)
 branch=\$(printf %s ${branch_b64} | base64 --decode)
 repo_dir=\"\$HOME/GolfLeaderboard\"
 if [[ -d \"\$repo_dir/.git\" ]]; then
-    git -C \"\$repo_dir\" fetch origin \"\$branch\"
+    git -C \"\$repo_dir\" fetch origin \"refs/heads/\$branch:refs/remotes/origin/\$branch\"
     if git -C \"\$repo_dir\" show-ref --verify --quiet \"refs/heads/\$branch\"; then
         git -C \"\$repo_dir\" checkout \"\$branch\"
     else
-        git -C \"\$repo_dir\" checkout --track -b \"\$branch\" \"origin/\$branch\"
+        git -C \"\$repo_dir\" checkout --no-track -b \"\$branch\" \"origin/\$branch\"
     fi
     git -C \"\$repo_dir\" pull --ff-only origin \"\$branch\"
 else

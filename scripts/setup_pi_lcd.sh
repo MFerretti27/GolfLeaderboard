@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# ==============================================================================
+# Golf Leaderboard setup for Raspberry Pi OS Desktop with an LCD/HDMI display.
+# Usage from a development computer (push your branch first):
+#   bash scripts/setup_pi_lcd.sh --ip 10.0.0.119 --user matt
+#
+# Usage locally on the Pi (as the desktop user, without sudo):
+#   bash scripts/setup_pi_lcd.sh
+#
+# Landscape is the default; add --orientation vertical for portrait layout.
+# Rotate the physical display separately in Raspberry Pi OS display settings.
+# Add --no-service to skip desktop autostart and Wi-Fi recovery.
+# Enable Desktop Autologin for unattended startup; setup requests sudo as needed.
+# ==============================================================================
+
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/pi_setup_common.sh"

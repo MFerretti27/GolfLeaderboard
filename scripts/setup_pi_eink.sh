@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Run this on Raspberry Pi OS from the GolfLeaderboard repository root or from
-# anywhere inside the checkout. It prepares the PhotoPainter E6 e-paper app.
+# ==============================================================================
+# Golf Leaderboard setup for Raspberry Pi OS with a PhotoPainter E6 e-ink display.
+# Usage from a development computer (push your branch first):
+#   bash scripts/setup_pi_eink.sh --ip 10.0.0.144 --user matt
+#
+# Usage locally on the Pi:
+#   bash scripts/setup_pi_eink.sh
+#
+# Portrait is the default; add --orientation horizontal for landscape.
+# Add --no-service to skip boot startup and Wi-Fi recovery.
+# SSH and sudo may prompt for passwords. Reboot if SPI setup requires it.
+# ==============================================================================
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"

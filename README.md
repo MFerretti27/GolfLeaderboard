@@ -253,7 +253,9 @@ mode detects the single enabled Wayland output (HDMI or DSI) and rotates a
 landscape display to 270 degrees before starting the app. Existing portrait
 rotation is preserved. This runs at each app start, including after desktop login,
 so no output name needs to be hardcoded. Connect only one enabled display.
-Horizontal mode leaves desktop rotation unchanged. On X11, or with `--no-service`,
+Horizontal mode restores landscape orientation (normal rotation for native
+landscape panels, a quarter turn for native portrait panels). An already matching
+orientation is preserved. On X11, or with `--no-service`,
 configure rotation in Raspberry Pi OS display settings instead.
 
 Setup automatically restarts the LCD app when a desktop session is available,

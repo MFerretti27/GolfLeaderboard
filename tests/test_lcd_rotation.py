@@ -3,7 +3,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from scripts.lcd_portrait import ensure_portrait, parse_outputs
+from scripts.lcd_portrait import ensure_orientation, parse_outputs
 
 
 def output(name="HDMI-A-1", transform="normal", mode="1024x600", enabled="yes"):
@@ -15,6 +15,41 @@ def output(name="HDMI-A-1", transform="normal", mode="1024x600", enabled="yes"):
 
 
 class LcdRotationTests(unittest.TestCase):
+    def test_horizontal_restores_landscape_for_hdmi_and_dsi(self):
+        for name in ("HDMI-A-1", "DSI-1"):
+            for transform in ("90", "270"):
+                with self.subTest(name=name, transform=transform):
+                    with patch.dict(os.environ, WAYLAND_DISPLAY="wayland-0"):
+                        with patch("scripts.lcd_portrait.subprocess.run") as run:
+                            run.side_effect = [
+                                subprocess.CompletedProcess([], 0, output(name, transform)),
+                                subprocess.CompletedProcess([], 0),
+                                subprocess.CompletedProcess([], 0, output(name)),
+                            ]
+                            ensure_orientation("horizontal")
+                            self.assertEqual(
+                                run.call_args_list[1].args[0],
+                                ["wlr-randr", "--output", name, "--transform", "normal"],
+                            )
+
+    def test_horizontal_rotates_native_portrait_panel(self):
+        with patch.dict(os.environ, WAYLAND_DISPLAY="wayland-0"):
+            with patch("scripts.lcd_portrait.subprocess.run") as run:
+                run.side_effect = [
+                    subprocess.CompletedProcess([], 0, output(mode="600x1024")),
+                    subprocess.CompletedProcess([], 0),
+                    subprocess.CompletedProcess([], 0, output(transform="270", mode="600x1024")),
+                ]
+                ensure_orientation("horizontal")
+                self.assertEqual(run.call_args_list[1].args[0][-1], "270")
+
+    def test_preserves_existing_landscape(self):
+        with patch.dict(os.environ, WAYLAND_DISPLAY="wayland-0"):
+            with patch("scripts.lcd_portrait.subprocess.run") as run:
+                run.return_value = subprocess.CompletedProcess([], 0, output())
+                ensure_orientation("horizontal")
+                self.assertEqual(run.call_count, 1)
+
     def test_detects_hdmi_and_dsi_without_hardcoded_name(self):
         for name in ("HDMI-A-1", "DSI-1"):
             with self.subTest(name=name), patch.dict(os.environ, WAYLAND_DISPLAY="wayland-0"):
@@ -24,7 +59,7 @@ class LcdRotationTests(unittest.TestCase):
                         subprocess.CompletedProcess([], 0),
                         subprocess.CompletedProcess([], 0, output(name, "270")),
                     ]
-                    ensure_portrait()
+                    ensure_orientation()
                     self.assertEqual(
                         run.call_args_list[1].args[0],
                         ["wlr-randr", "--output", name, "--transform", "270"],
@@ -36,7 +71,7 @@ class LcdRotationTests(unittest.TestCase):
                 with patch.dict(os.environ, WAYLAND_DISPLAY="wayland-0"):
                     with patch("scripts.lcd_portrait.subprocess.run") as run:
                         run.return_value = subprocess.CompletedProcess([], 0, output("DSI-1", transform, mode))
-                        ensure_portrait()
+                        ensure_orientation()
                         self.assertEqual(run.call_count, 1)
 
     def test_ignores_disabled_outputs(self):
@@ -49,7 +84,7 @@ class LcdRotationTests(unittest.TestCase):
                 with patch("scripts.lcd_portrait.subprocess.run") as run:
                     run.return_value = subprocess.CompletedProcess([], 0, text)
                     with self.assertRaisesRegex(RuntimeError, "Expected one"):
-                        ensure_portrait()
+                        ensure_orientation()
 
     def test_failed_rotation_is_propagated(self):
         with patch.dict(os.environ, WAYLAND_DISPLAY="wayland-0"):
@@ -59,14 +94,14 @@ class LcdRotationTests(unittest.TestCase):
                     subprocess.CalledProcessError(1, ["wlr-randr"]),
                 ]
                 with self.assertRaises(subprocess.CalledProcessError):
-                    ensure_portrait()
+                    ensure_orientation()
 
     def test_rotation_must_be_verified(self):
         with patch.dict(os.environ, WAYLAND_DISPLAY="wayland-0"):
             with patch("scripts.lcd_portrait.subprocess.run") as run:
                 run.return_value = subprocess.CompletedProcess([], 0, output())
                 with self.assertRaisesRegex(RuntimeError, "was not applied"):
-                    ensure_portrait()
+                    ensure_orientation()
 
     def test_native_portrait_panel_returns_to_normal(self):
         with patch.dict(os.environ, WAYLAND_DISPLAY="wayland-0"):
@@ -76,7 +111,7 @@ class LcdRotationTests(unittest.TestCase):
                     subprocess.CompletedProcess([], 0),
                     subprocess.CompletedProcess([], 0, output("DSI-1", "normal", "480x800")),
                 ]
-                ensure_portrait()
+                ensure_orientation()
                 self.assertEqual(
                     run.call_args_list[1].args[0],
                     ["wlr-randr", "--output", "DSI-1", "--transform", "normal"],
@@ -86,7 +121,7 @@ class LcdRotationTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with patch("scripts.lcd_portrait.subprocess.run") as run:
                 with patch("sys.stderr") as stderr:
-                    ensure_portrait()
+                    ensure_orientation()
                     self.assertTrue(stderr.write.called)
                 run.assert_not_called()
 

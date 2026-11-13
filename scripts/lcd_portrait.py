@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Rotate the single active Wayland display to portrait before LCD startup."""
+"""Apply the requested orientation to the active Wayland LCD before startup."""
 
+import argparse
 import os
 import re
 import subprocess
@@ -27,11 +28,14 @@ def parse_outputs(output: str) -> list[dict[str, str]]:
     return [display for display in displays if display.get("enabled") == "yes"]
 
 
-def ensure_portrait() -> None:
+def ensure_orientation(orientation: str = "vertical") -> None:
+    if orientation not in ("vertical", "horizontal"):
+        raise ValueError(f"Unsupported LCD orientation: {orientation}")
+    description = "portrait" if orientation == "vertical" else "landscape"
     if not os.environ.get("WAYLAND_DISPLAY"):
         print(
             "Automatic LCD rotation requires Wayland. On X11, rotate the display "
-            "in Raspberry Pi OS display settings; the app will use portrait layout.",
+            f"in Raspberry Pi OS display settings; the app will use {description} layout.",
             file=sys.stderr,
         )
         return
@@ -40,7 +44,7 @@ def ensure_portrait() -> None:
     if len(displays) != 1:
         raise RuntimeError(
             f"Expected one enabled LCD output, found {len(displays)}. "
-            "Connect only the leaderboard display before starting portrait mode."
+            f"Connect only the leaderboard display before starting {description} mode."
         )
     display = displays[0]
     if not all(key in display for key in ("width", "height", "transform")):
@@ -54,11 +58,12 @@ def ensure_portrait() -> None:
         raise RuntimeError(f"Unsupported display transform: {transform}")
     if transform in ("90", "270", "flipped-90", "flipped-270"):
         width, height = height, width
-    if height >= width:
-        print(f"LCD output {display['name']} is already portrait; keeping {transform}.")
+    if (height >= width if orientation == "vertical" else width >= height):
+        print(f"LCD output {display['name']} is already {description}; keeping {transform}.")
         return
-    # Native portrait panels need no quarter turn; landscape panels need 270.
-    target = "270" if int(display["width"]) > int(display["height"]) else "normal"
+    native_portrait = int(display["height"]) > int(display["width"])
+    target_portrait = orientation == "vertical"
+    target = "normal" if native_portrait == target_portrait else "270"
     subprocess.run(
         ["wlr-randr", "--output", display["name"], "--transform", target],
         check=True,
@@ -69,9 +74,11 @@ def ensure_portrait() -> None:
         item["name"] == display["name"] and item.get("transform") == target
         for item in updated
     ):
-        raise RuntimeError(f"Portrait rotation was not applied to {display['name']}")
+        raise RuntimeError(f"{description.capitalize()} rotation was not applied to {display['name']}")
     print(f"LCD output {display['name']} rotated to {target}.")
 
 
 if __name__ == "__main__":
-    ensure_portrait()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--orientation", choices=("vertical", "horizontal"), default="vertical")
+    ensure_orientation(parser.parse_args().orientation)

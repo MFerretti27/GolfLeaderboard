@@ -54,6 +54,9 @@ class LcdLayoutTests(unittest.TestCase):
             gui.fit_lcd_content_width(window, 4)
         for prefix in ("HEADER", "CELL_0", "CELL_1"):
             for col in range(4):
+                window[f"{prefix}_{col}"].Widget.configure.assert_called_once_with(
+                    anchor="w" if col == 1 else "center",
+                )
                 window[f"{prefix}_{col}"].expand.assert_called_once_with(
                     expand_x=True, expand_row=False,
                 )

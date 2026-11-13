@@ -427,6 +427,7 @@ def fit_lcd_content_width(window: Any, column_count: int) -> None:
         prefix = "HEADER" if row_index == -1 else f"CELL_{row_index}"
         for column_index in range(column_count):
             element = window[f"{prefix}_{column_index}"]
+            element.Widget.configure(anchor="w" if column_index == 1 else "center")
             element.expand(expand_x=True, expand_row=False)
     window.TKroot.update_idletasks()
 

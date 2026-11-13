@@ -42,6 +42,22 @@ class LcdLayoutTests(unittest.TestCase):
         window["LEADERBOARD_GRID"].Widget.winfo_pixels.return_value = 0
         return window
 
+    def test_internal_cell_padding_must_fit_without_clipping(self):
+        window = self.make_window()
+        viewport = window["LEADERBOARD_GRID"].Widget
+        viewport.winfo_rooty.return_value = 100
+        viewport.winfo_height.return_value = 100
+        viewport.master = window.TKroot
+        window.TKroot.winfo_rooty.return_value = 0
+        window.TKroot.winfo_height.return_value = 200
+        widget = window["CELL_0_0"].Widget
+        widget.winfo_ismapped.return_value = True
+        widget.winfo_rooty.return_value = 174
+        widget.winfo_height.return_value = 25
+        widget.winfo_reqheight.return_value = 25
+        widget.pack_info.return_value = {"ipady": 2}
+        self.assertEqual(gui.fit_visible_grid_rows(window, 1, 1), 0)
+
     def test_portrait_title_wraps_to_allocated_width(self):
         window = self.make_window()
         with patch.object(gui, "SCREEN_ORIENTATION", "vertical"):
@@ -55,8 +71,9 @@ class LcdLayoutTests(unittest.TestCase):
         for prefix in ("HEADER", "CELL_0", "CELL_1"):
             for col in range(4):
                 window[f"{prefix}_{col}"].Widget.configure.assert_called_once_with(
-                    anchor="w" if col == 1 else "center",
+                    anchor="sw" if col == 1 else "s", pady=0,
                 )
+                window[f"{prefix}_{col}"].Widget.pack_configure.assert_called_once_with(ipady=2)
                 window[f"{prefix}_{col}"].expand.assert_called_once_with(
                     expand_x=True, expand_row=False,
                 )
@@ -83,6 +100,7 @@ class LcdLayoutTests(unittest.TestCase):
                 widget.winfo_rooty.return_value = y
                 widget.winfo_height.return_value = height
                 widget.winfo_reqheight.return_value = 25
+                widget.pack_info.return_value = {}
         self.assertEqual(gui.fit_visible_grid_rows(window, 4, 3), 2)
         for col in range(4):
             window[f"CELL_2_{col}"].update.assert_called_once_with(visible=False)
@@ -102,6 +120,7 @@ class LcdLayoutTests(unittest.TestCase):
             widget.winfo_rooty.return_value = 174
             widget.winfo_height.return_value = 25
             widget.winfo_reqheight.return_value = 25
+            widget.pack_info.return_value = {}
         self.assertEqual(gui.fit_visible_grid_rows(window, 4, 1), 1)
 
     def test_row_overlapping_frame_border_is_hidden(self):
@@ -120,6 +139,7 @@ class LcdLayoutTests(unittest.TestCase):
             widget.winfo_rooty.return_value = 174
             widget.winfo_height.return_value = 25
             widget.winfo_reqheight.return_value = 25
+            widget.pack_info.return_value = {}
         self.assertEqual(gui.fit_visible_grid_rows(window, 4, 1), 0)
         for col in range(4):
             window[f"CELL_0_{col}"].update.assert_called_once_with(visible=False)

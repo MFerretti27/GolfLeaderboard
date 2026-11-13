@@ -281,7 +281,10 @@ def fit_visible_grid_rows(window: Any, column_count: int, row_count: int) -> int
         row_bottom = max(
             (
                 cell.Widget.winfo_rooty()
-                + max(cell.Widget.winfo_height(), cell.Widget.winfo_reqheight())
+                + max(
+                    cell.Widget.winfo_height(),
+                    cell.Widget.winfo_reqheight() + 2 * int(cell.Widget.pack_info().get("ipady", 0)),
+                )
                 + PAD_CELL[1]
                 for cell in cells
             ),
@@ -427,8 +430,10 @@ def fit_lcd_content_width(window: Any, column_count: int) -> None:
         prefix = "HEADER" if row_index == -1 else f"CELL_{row_index}"
         for column_index in range(column_count):
             element = window[f"{prefix}_{column_index}"]
-            element.Widget.configure(anchor="w" if column_index == 1 else "center")
+            # Balance the font's descent space with a small inset above the text.
+            element.Widget.configure(anchor="sw" if column_index == 1 else "s", pady=0)
             element.expand(expand_x=True, expand_row=False)
+            element.Widget.pack_configure(ipady=2)
     window.TKroot.update_idletasks()
 
 

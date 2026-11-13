@@ -1,16 +1,33 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from concurrent.futures import ThreadPoolExecutor
-from io import BytesIO
-from typing import Any, TYPE_CHECKING
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 if __package__ and not TYPE_CHECKING:
-    from .golf import get_player_tee_off_time, get_preferred_events, get_round_hole_progress, get_scheduled_round_number, get_tournament_presentation_data, safe_int, select_display_event
+    from .golf import (
+        get_player_tee_off_time,
+        get_preferred_events,
+        get_round_hole_progress,
+        get_scheduled_round_number,
+        get_tournament_presentation_data,
+        safe_int,
+        select_display_event,
+    )
 else:
-    from golf import get_player_tee_off_time, get_preferred_events, get_round_hole_progress, get_scheduled_round_number, get_tournament_presentation_data, safe_int, select_display_event
+    from golf import (
+        get_player_tee_off_time,
+        get_preferred_events,
+        get_round_hole_progress,
+        get_scheduled_round_number,
+        get_tournament_presentation_data,
+        safe_int,
+        select_display_event,
+    )
 
 WINDOW_SIZE = (1400, 900)
 AUTO_REFRESH_MS = 30000
@@ -119,16 +136,17 @@ def configure_display(
 
 def get_screen_window_size() -> tuple[int, int]:
     """Detect the primary display size and reserve space for desktop chrome."""
-    try:
-        import tkinter as tk
+    import tkinter as tk
 
+    try:
         root = tk.Tk()
         root.withdraw()
         screen_width = root.winfo_screenwidth()
         screen_height = root.winfo_screenheight()
         root.destroy()
         return max(320, screen_width), max(240, screen_height)
-    except Exception:
+    except tk.TclError:
+        logging.getLogger(__name__).exception("Could not detect the display size; using the default dimensions")
         return BASE_SCREEN_SIZE
 
 
@@ -668,6 +686,7 @@ def run_gui(
                 render_current_event(live_events)
             except Exception as exc:
                 # Keep current content if refresh fails temporarily.
+                logging.getLogger(__name__).exception("LCD refresh failed; retaining current content")
                 now = datetime.now().strftime(TIME_FORMAT)
                 window["LAST_UPDATE"].update(f"Last update failed ({now}): {exc}")
             continue

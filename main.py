@@ -3,9 +3,10 @@ import os
 import platform
 import subprocess
 import sys
-import venv
 import traceback
+import venv
 from pathlib import Path
+
 
 def create_virtualenv(venv_dir: str) -> None:
     """Create a virtual environment in the specified directory.
@@ -18,7 +19,7 @@ def create_virtualenv(venv_dir: str) -> None:
             venv.create(venv_dir, with_pip=True)
         else:
             print(f"Virtual environment already exists in {venv_dir}.")
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         print(f"Failed to create virtual environment in {venv_dir}", file=sys.stderr)
         traceback.print_exc()
         print("Please ensure you have sufficient disk space and permissions.")
@@ -82,7 +83,7 @@ def run_program_in_venv(
             [str(python_executable), "-m", program_script, *(program_args or [])],
             cwd=working_dir,
         )
-    except Exception:
+    except OSError:
         print(f"Failed to run program {program_script}", file=sys.stderr)
         traceback.print_exc()
         sys.exit(1)
@@ -112,10 +113,10 @@ def remove_ds_files() -> None:
                         try:
                             print(f"Removing: {path}")
                             path.unlink()
-                        except Exception:
+                        except OSError:
                             print(f"Failed to remove .DS_Store file: {path}", file=sys.stderr)
                             traceback.print_exc()
-        except Exception:
+        except OSError:
             print("Error walking directory during .DS_Store removal", file=sys.stderr)
             traceback.print_exc()
 

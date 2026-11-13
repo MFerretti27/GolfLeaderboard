@@ -1,10 +1,9 @@
 import os
-from pathlib import Path
 import socket
 import subprocess
 import tempfile
 import unittest
-
+from pathlib import Path
 
 COMMON_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "pi_setup_common.sh"
 
@@ -12,23 +11,26 @@ COMMON_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "pi_setup_comm
 class PiSetupRestartTests(unittest.TestCase):
     def run_restart(self, graphical=True, bus=True, restart_status=0, local=False):
         # Unix socket paths have a short limit on macOS.
-        with tempfile.TemporaryDirectory(dir="/tmp") as runtime_dir:
-            with socket.socket(socket.AF_UNIX) as session_bus:
-                if bus:
-                    session_bus.bind(str(Path(runtime_dir) / "bus"))
-                environment = os.environ.copy()
-                environment.update(
-                    XDG_RUNTIME_DIR=runtime_dir,
-                    SSH_CONNECTION="" if local else "test-ssh-session",
-                    DISPLAY=":0" if local else "",
-                    WAYLAND_DISPLAY="",
-                    TEST_GRAPHICAL="1" if graphical else "0",
-                    TEST_RESTART_STATUS=str(restart_status),
-                )
-                return subprocess.run(
-                    [
-                        "bash", "-c",
-                        """
+        with (
+            tempfile.TemporaryDirectory(dir="/tmp") as runtime_dir,
+            socket.socket(socket.AF_UNIX) as session_bus,
+        ):
+            if bus:
+                session_bus.bind(str(Path(runtime_dir) / "bus"))
+            environment = os.environ.copy()
+            environment.update(
+                XDG_RUNTIME_DIR=runtime_dir,
+                SSH_CONNECTION="" if local else "test-ssh-session",
+                DISPLAY=":0" if local else "",
+                WAYLAND_DISPLAY="",
+                TEST_GRAPHICAL="1" if graphical else "0",
+                TEST_RESTART_STATUS=str(restart_status),
+            )
+            return subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    """
 set -Eeuo pipefail
 source "$1"
 systemctl() {
@@ -47,10 +49,14 @@ systemctl() {
 launcher() { echo "desktop launcher" >&2; }
 restart_lcd_after_setup launcher
 """,
-                        "test", str(COMMON_SCRIPT),
-                    ],
-                    env=environment, capture_output=True, text=True, check=False,
-                )
+                    "test",
+                    str(COMMON_SCRIPT),
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
 
     def test_ssh_restarts_using_saved_desktop_environment(self):
         result = self.run_restart()

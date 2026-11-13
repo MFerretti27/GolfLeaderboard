@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if __package__ and not TYPE_CHECKING:
     from .golf import (
-        get_preferred_events,
         get_player_tee_off_time,
+        get_preferred_events,
         get_round_hole_progress,
         get_scheduled_round_number,
         get_tournament_presentation_data,
@@ -21,8 +22,8 @@ if __package__ and not TYPE_CHECKING:
     )
 else:
     from golf import (
-        get_preferred_events,
         get_player_tee_off_time,
+        get_preferred_events,
         get_round_hole_progress,
         get_scheduled_round_number,
         get_tournament_presentation_data,
@@ -452,8 +453,8 @@ def run_epaper(
                     print(f"No visible changes at {datetime.now():%Y-%m-%d %H:%M:%S}; skipped refresh")
             except KeyboardInterrupt:
                 break
-            except Exception as exc:
-                print(f"Refresh failed; retaining the current e-paper image: {exc}")
+            except Exception:
+                logging.getLogger(__name__).exception("Refresh failed; retaining the current e-paper image")
             time.sleep(refresh_seconds)
     finally:
         if initialized:

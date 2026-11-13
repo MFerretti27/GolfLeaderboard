@@ -1,9 +1,10 @@
-import requests
+import re
 from datetime import datetime, timezone
 from pathlib import Path
-import re
 from time import monotonic
 from typing import Any
+
+import requests
 
 SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
 CORE_EVENT_URL = "https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/{event_id}"
@@ -446,9 +447,10 @@ def get_player_tee_off_time(event, competition, competitor):
         if not raw_tee_time:
             break
         try:
-            parsed_time = datetime.fromisoformat(str(raw_tee_time).replace("Z", "+00:00"))
+            # Python 3.10 needs an explicit offset rather than the ISO "Z" suffix.
+            parsed_time = datetime.fromisoformat(str(raw_tee_time).replace("Z", "+00:00"))  # noqa: FURB162
             if parsed_time.tzinfo is None:
-                parsed_time = parsed_time.replace(tzinfo=timezone.utc)
+                parsed_time = parsed_time.replace(tzinfo=timezone.utc)  # noqa: UP017 - Python 3.10 compatibility
             tee_time = parsed_time.astimezone().strftime("%I:%M %p").lstrip("0")
         except ValueError:
             tee_time = ""
@@ -636,7 +638,7 @@ def build_tournament_text(event, top_n=None):
     competition = event.get("competitions", [{}])[0]
     status_desc, status_detail = get_status_text(event, competition)
     broadcast = competition.get("broadcast", "")
-    course_name, location_text, weather_text, _ = get_event_metadata(event)
+    course_name, location_text, _weather_text, _ = get_event_metadata(event)
 
     competitors = sorted(
         competition.get("competitors", []),
@@ -683,7 +685,7 @@ def build_tournament_text(event, top_n=None):
         )
 
         lines.append(
-            f"  {position_display:>8}  {str(player_name):<22}  {country:<4}  {total_score:>4}{round_scores}"
+            f"  {position_display:>8}  {player_name!s:<22}  {country:<4}  {total_score:>4}{round_scores}"
         )
 
     return "\n".join(lines)
@@ -759,7 +761,7 @@ def build_live_tournament_text(event, top_n=None):
                 hole_values[idx] = get_hole_display_value(hole)
 
         lines.append(
-            f"  {position_display:>4}  {str(player_name):<20}  {total_score:>4}  {today_score:>5}{''.join(f' {value:>2}' for value in hole_values)}"
+            f"  {position_display:>4}  {player_name!s:<20}  {total_score:>4}  {today_score:>5}{''.join(f' {value:>2}' for value in hole_values)}"
         )
 
     return "\n".join(lines)

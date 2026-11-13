@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Apply the requested orientation to the active Wayland LCD before startup."""
 
 import argparse

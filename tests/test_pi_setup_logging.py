@@ -1,7 +1,6 @@
-from pathlib import Path
 import subprocess
 import unittest
-
+from pathlib import Path
 
 COMMON_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "pi_setup_common.sh"
 

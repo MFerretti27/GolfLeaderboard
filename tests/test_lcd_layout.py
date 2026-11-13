@@ -12,8 +12,8 @@ class LcdLayoutTests(unittest.TestCase):
                 self.assertEqual(gui.FONT_GRID_SIZE, expected)
                 self.assertEqual(gui.FONT_META_SIZE, expected)
 
-    def test_landscape_fonts_scale_for_readability(self):
-        for size, expected in (((1024, 600), 16), ((800, 480), 12)):
+    def test_landscape_keeps_original_font_scale(self):
+        for size, expected in (((1024, 600), 11), ((800, 480), 10)):
             for orientation in ("horizontal", None):
                 with self.subTest(size=size, orientation=orientation), patch.dict(gui.__dict__, gui.__dict__.copy()):
                     gui.configure_display("screen", size, orientation=orientation)
